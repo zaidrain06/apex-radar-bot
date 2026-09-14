@@ -63,7 +63,7 @@ We monitor real-time institutional liquidation cascades, whale order flow, and l
 
 🔒 *VIP Channel Access:*
 Subscribe on Whop to unlock unfiltered real-time alerts:
-https://whop.com/checkout/${config.whop.planId}
+${config.whop.productUrl}
 `.trim();
       await this.sendMessage(chatId, welcome);
     } else if (text === '/status') {
@@ -79,12 +79,11 @@ https://whop.com/checkout/${config.whop.planId}
       const plansText = `
 💎 *ApexRadar VIP Membership Plans*
 ━━━━━━━━━━━━━━━━━━━━━
-• Monthly VIP: *$29 / Month*
-• Quarterly Pass: *$69 / 3 Months* (Save 20%)
-• Lifetime Access: *$199 / Once*
+• Monthly VIP: *$29.99 / Month*
+• Full Access: Instant Telegram VIP Broadcast
 
-👉 *Instant Activation:*
-https://whop.com/checkout/${config.whop.planId}
+👉 *Instant Activation on Whop:*
+${config.whop.productUrl}
 `.trim();
       await this.sendMessage(chatId, plansText);
     }

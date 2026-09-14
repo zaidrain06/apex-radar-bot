@@ -17,7 +17,8 @@ module.exports = {
   telegram: {
     botToken: process.env.TELEGRAM_BOT_TOKEN || '',
     channelId: process.env.TELEGRAM_CHANNEL_ID || '-1004208031753', // VIP Broadcast Channel
-    adminChatId: process.env.TELEGRAM_ADMIN_CHAT_ID || '1339587201'
+    adminChatId: process.env.TELEGRAM_ADMIN_CHAT_ID || '1339587201',
+    inviteLink: process.env.TELEGRAM_INVITE_LINK || 'https://t.me/+7olzpqcRqMthNmM0'
   },
 
   // Whop Configuration
@@ -25,7 +26,8 @@ module.exports = {
     apiKey: process.env.WHOP_API_KEY || '',
     webhookSecret: process.env.WHOP_WEBHOOK_SECRET || '',
     planId: process.env.WHOP_PLAN_ID || 'plan_apex_vip_monthly',
-    priceUsd: 29.00
+    productUrl: 'https://whop.com/apexradar/apexradar-vip-intelligence',
+    priceUsd: 29.99
   },
 
   // Server port for webhook listeners and health checks
