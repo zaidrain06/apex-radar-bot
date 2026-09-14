@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: apex-radar-bot
+    env: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: MIN_LIQUIDATION_USD
+        value: 25000
+      - key: MEGA_LIQUIDATION_USD
+        value: 150000
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHANNEL_ID
+        sync: false
+      - key: TELEGRAM_ADMIN_CHAT_ID
+        sync: false
