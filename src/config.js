@@ -16,8 +16,8 @@ module.exports = {
   // Telegram Configuration
   telegram: {
     botToken: process.env.TELEGRAM_BOT_TOKEN || '',
-    channelId: process.env.TELEGRAM_CHANNEL_ID || '', // VIP Broadcast Channel
-    adminChatId: process.env.TELEGRAM_ADMIN_CHAT_ID || ''
+    channelId: process.env.TELEGRAM_CHANNEL_ID || '-1004208031753', // VIP Broadcast Channel
+    adminChatId: process.env.TELEGRAM_ADMIN_CHAT_ID || '1339587201'
   },
 
   // Whop Configuration
