@@ -20,8 +20,22 @@ class TelegramManager {
     this.startLongPolling();
   }
 
-  startLongPolling() {
+  async startLongPolling() {
     this.isPolling = true;
+
+    // 1. Flush any stale pending messages on startup so bot never spams
+    try {
+      const flushRes = await fetch(`${this.baseUrl}/getUpdates?offset=-1`);
+      if (flushRes.ok) {
+        const flushData = await flushRes.json();
+        if (flushData.ok && Array.isArray(flushData.result) && flushData.result.length > 0) {
+          this.lastUpdateId = flushData.result[flushData.result.length - 1].update_id;
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+
     const poll = async () => {
       if (!this.isPolling) return;
       try {
@@ -32,16 +46,23 @@ class TelegramManager {
             for (const update of data.result) {
               this.lastUpdateId = update.update_id;
               if (update.message && update.message.text) {
-                this.handleIncomingMessage(update.message);
+                // Ignore any message older than 30 seconds to prevent replay storms
+                const msgAge = Math.floor(Date.now() / 1000) - (update.message.date || 0);
+                if (msgAge <= 30) {
+                  this.handleIncomingMessage(update.message);
+                }
               }
             }
           }
+        } else if (res.status === 409) {
+          // Another instance polling: wait 10s before retry
+          await new Promise(r => setTimeout(r, 10000));
         }
       } catch (err) {
         // network blip, continue
       }
       if (this.isPolling) {
-        setTimeout(poll, 1000);
+        setTimeout(poll, 1500);
       }
     };
     poll();
@@ -108,13 +129,12 @@ ${config.whop.productUrl}
   }
 
   async sendAlert(formattedMessage) {
-    const target = this.channelId || config.telegram.channelId;
-    if (!target) {
-      console.log('\n📱 [TELEGRAM MOCK BROADCAST]:\n' + formattedMessage + '\n');
-      return true;
-    }
+    // Alerts MUST ALWAYS go to VIP channel (-100...), never to private personal chat
+    const channelTarget = (this.channelId && this.channelId.startsWith('-100'))
+      ? this.channelId
+      : '-1004208031753';
 
-    return await this.sendMessage(target, formattedMessage);
+    return await this.sendMessage(channelTarget, formattedMessage);
   }
 
   stop() {

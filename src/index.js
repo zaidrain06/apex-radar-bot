@@ -76,6 +76,8 @@ const server = http.createServer((req, res) => {
     return res.end(JSON.stringify({
       status: 'UP',
       service: 'ApexRadar Crypto Intelligence',
+      version: '1.2.0-ffb49a4',
+      targetChannelId: config.telegram.channelId,
       wsConnected: binanceEngine.isConnected,
       stats: binanceEngine.stats,
       uptimeSec: Math.round(process.uptime())
