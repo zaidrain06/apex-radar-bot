@@ -4,7 +4,7 @@ module.exports = {
   // Binance Futures WebSocket Streams
   binance: {
     wsBaseUrl: 'wss://fstream.binance.com',
-    liquidationStream: '/ws/!forceOrder@arr',
+    liquidationStream: '/market/ws/!forceOrder@arr',
     // Minimum threshold for a single liquidation to trigger an alert ($ USD)
     minLiquidationUsd: parseFloat(process.env.MIN_LIQUIDATION_USD || '25000'),
     megaLiquidationUsd: parseFloat(process.env.MEGA_LIQUIDATION_USD || '150000'),
