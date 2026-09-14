@@ -16,7 +16,10 @@ module.exports = {
   // Telegram Configuration
   telegram: {
     botToken: process.env.TELEGRAM_BOT_TOKEN || '',
-    channelId: process.env.TELEGRAM_CHANNEL_ID || '-1004208031753', // VIP Broadcast Channel
+    // If TELEGRAM_CHANNEL_ID is personal ID (positive number), fallback to VIP channel (-100...)
+    channelId: (process.env.TELEGRAM_CHANNEL_ID && process.env.TELEGRAM_CHANNEL_ID.startsWith('-100'))
+      ? process.env.TELEGRAM_CHANNEL_ID
+      : '-1004208031753',
     adminChatId: process.env.TELEGRAM_ADMIN_CHAT_ID || '1339587201',
     inviteLink: process.env.TELEGRAM_INVITE_LINK || 'https://t.me/+7olzpqcRqMthNmM0'
   },
