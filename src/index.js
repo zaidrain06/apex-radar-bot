@@ -34,7 +34,44 @@ binanceEngine.start();
 
 // 5. Lightweight HTTP Server (Healthcheck & Whop Webhooks)
 const server = http.createServer((req, res) => {
-  if (req.method === 'GET' && req.url === '/health') {
+  if (req.method === 'GET' && (req.url === '/' || req.url === '/health')) {
+    const isBrowser = (req.headers.accept || '').includes('text/html');
+    if (isBrowser && req.url === '/') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      return res.end(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>ApexRadar Cloud Terminal</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <style>
+            body { background: #0b0e14; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+            .card { background: #151922; border: 1px solid #1e293b; border-radius: 16px; padding: 32px; max-width: 480px; width: 90%; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5); }
+            .badge { display: inline-flex; align-items: center; gap: 8px; background: rgba(16, 185, 129, 0.15); color: #10b981; padding: 6px 14px; border-radius: 9999px; font-weight: 600; font-size: 14px; margin-bottom: 20px; }
+            .dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; animation: pulse 2s infinite; }
+            h1 { margin: 0 0 10px; font-size: 24px; color: #fff; }
+            p { margin: 0 0 24px; color: #94a3b8; font-size: 14px; line-height: 1.6; }
+            .metric { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #1e293b; font-size: 14px; }
+            .metric-label { color: #64748b; }
+            .metric-val { color: #38bdf8; font-weight: 600; }
+            @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+          </style>
+        </head>
+        <body>
+          <div class="card">
+            <div class="badge"><div class="dot"></div> SYSTEMS LIVE 7/24</div>
+            <h1>ApexRadar Intelligence</h1>
+            <p>Real-time institutional Binance Futures liquidation radar and whale order flow streaming engine.</p>
+            <div class="metric"><span class="metric-label">WebSocket Status</span><span class="metric-val" style="color:#10b981;">CONNECTED</span></div>
+            <div class="metric"><span class="metric-label">Engine Feed</span><span class="metric-val">Binance Futures (!forceOrder)</span></div>
+            <div class="metric"><span class="metric-label">Min Alert Filter</span><span class="metric-val">$${config.binance.minLiquidationUsd.toLocaleString()} USD</span></div>
+            <div class="metric"><span class="metric-label">Uptime</span><span class="metric-val">${Math.round(process.uptime())}s</span></div>
+          </div>
+        </body>
+        </html>
+      `);
+    }
+
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({
       status: 'UP',
@@ -42,7 +79,7 @@ const server = http.createServer((req, res) => {
       wsConnected: binanceEngine.isConnected,
       stats: binanceEngine.stats,
       uptimeSec: Math.round(process.uptime())
-    }));
+    }, null, 2));
   }
 
   if (req.method === 'POST' && req.url === '/webhooks/whop') {
