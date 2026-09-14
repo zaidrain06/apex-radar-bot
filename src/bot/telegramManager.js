@@ -1,39 +1,61 @@
-const TelegramBot = require('node-telegram-bot-api');
 const config = require('../config');
 
 class TelegramManager {
   constructor(options = {}) {
     this.token = options.token || config.telegram.botToken;
     this.channelId = options.channelId || config.telegram.channelId;
-    this.bot = null;
-    this.isMock = !this.token || this.token === 'YOUR_TELEGRAM_BOT_TOKEN';
+    this.baseUrl = `https://api.telegram.org/bot${this.token}`;
+    this.isPolling = false;
+    this.lastUpdateId = 0;
+    this.pollInterval = null;
   }
 
   init() {
-    if (this.isMock) {
+    if (!this.token || this.token === 'YOUR_TELEGRAM_BOT_TOKEN') {
       console.log('ℹ️ [TelegramManager] Running in Simulation/Console mode (No bot token set). Signals will print to terminal.');
       return;
     }
 
-    try {
-      this.bot = new TelegramBot(this.token, { polling: true });
-      console.log('✅ [TelegramManager] Telegram Bot initialized with active polling.');
-      this.registerCommands();
-    } catch (err) {
-      console.error('❌ [TelegramManager] Bot initialization failed:', err.message);
-      this.isMock = true;
-    }
+    console.log('✅ [TelegramManager] Telegram Bot API initialized with native fetch engine.');
+    this.startLongPolling();
   }
 
-  registerCommands() {
-    if (!this.bot) return;
+  startLongPolling() {
+    this.isPolling = true;
+    const poll = async () => {
+      if (!this.isPolling) return;
+      try {
+        const res = await fetch(`${this.baseUrl}/getUpdates?offset=${this.lastUpdateId + 1}&timeout=20`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.ok && Array.isArray(data.result)) {
+            for (const update of data.result) {
+              this.lastUpdateId = update.update_id;
+              if (update.message && update.message.text) {
+                this.handleIncomingMessage(update.message);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        // network blip, continue
+      }
+      if (this.isPolling) {
+        setTimeout(poll, 1000);
+      }
+    };
+    poll();
+  }
 
-    this.bot.onText(/\/start/, (msg) => {
-      const chatId = msg.chat.id;
-      const text = `
+  async handleIncomingMessage(msg) {
+    const chatId = msg.chat.id;
+    const text = (msg.text || '').trim();
+
+    if (text === '/start') {
+      const welcome = `
 🚀 *Welcome to ApexRadar VIP Intelligence!*
 
-We monitor real-time institutional liquidation cascades, whale order flow, and funding anomalies across crypto derivatives.
+We monitor real-time institutional liquidation cascades, whale order flow, and leverage squeezes across crypto derivatives.
 
 *Available Commands:*
 • /status — Check live WebSocket & radar health
@@ -43,40 +65,61 @@ We monitor real-time institutional liquidation cascades, whale order flow, and f
 Subscribe on Whop to unlock unfiltered real-time alerts:
 https://whop.com/checkout/${config.whop.planId}
 `.trim();
-      this.bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
-    });
-
-    this.bot.onText(/\/status/, (msg) => {
-      const chatId = msg.chat.id;
-      const text = `
+      await this.sendMessage(chatId, welcome);
+    } else if (text === '/status') {
+      const statusText = `
 🟢 *ApexRadar Systems: Operational*
 • Feed: Binance Futures USD-M WebSocket
 • Filter: Minimum $${config.binance.minLiquidationUsd.toLocaleString()} USD
 • Mega Trigger: $${config.binance.megaLiquidationUsd.toLocaleString()} USD
 • Latency: Real-time (<150ms)
 `.trim();
-      this.bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
-    });
+      await this.sendMessage(chatId, statusText);
+    } else if (text === '/plans') {
+      const plansText = `
+💎 *ApexRadar VIP Membership Plans*
+━━━━━━━━━━━━━━━━━━━━━
+• Monthly VIP: *$29 / Month*
+• Quarterly Pass: *$69 / 3 Months* (Save 20%)
+• Lifetime Access: *$199 / Once*
+
+👉 *Instant Activation:*
+https://whop.com/checkout/${config.whop.planId}
+`.trim();
+      await this.sendMessage(chatId, plansText);
+    }
+  }
+
+  async sendMessage(chatId, text) {
+    try {
+      const res = await fetch(`${this.baseUrl}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: text,
+          parse_mode: 'Markdown'
+        })
+      });
+      return res.ok;
+    } catch (err) {
+      console.error('❌ [TelegramManager] Send error:', err.message);
+      return false;
+    }
   }
 
   async sendAlert(formattedMessage) {
-    if (this.isMock) {
+    const target = this.channelId || config.telegram.channelId;
+    if (!target) {
       console.log('\n📱 [TELEGRAM MOCK BROADCAST]:\n' + formattedMessage + '\n');
       return true;
     }
 
-    if (!this.channelId) {
-      console.warn('⚠️ [TelegramManager] No channel ID configured. Alert skipped.');
-      return false;
-    }
+    return await this.sendMessage(target, formattedMessage);
+  }
 
-    try {
-      await this.bot.sendMessage(this.channelId, formattedMessage, { parse_mode: 'Markdown' });
-      return true;
-    } catch (err) {
-      console.error('❌ [TelegramManager] Failed to send message to channel:', err.message);
-      return false;
-    }
+  stop() {
+    this.isPolling = false;
   }
 }
 
