@@ -11,17 +11,17 @@ class TelegramManager {
     this.pollInterval = null;
   }
 
-  init() {
+  init(whopGate) {
     if (!this.token || this.token === 'YOUR_TELEGRAM_BOT_TOKEN') {
       console.log('ℹ️ [TelegramManager] Running in Simulation/Console mode (No bot token set). Signals will print to terminal.');
       return;
     }
 
     console.log('✅ [TelegramManager] Telegram Bot API initialized with native fetch engine.');
-    this.startLongPolling();
+    this.startLongPolling(whopGate);
   }
 
-  async startLongPolling() {
+  async startLongPolling(whopGate) {
     this.isPolling = true;
 
     // 1. Flush any stale pending messages on startup so bot never spams
@@ -50,7 +50,7 @@ class TelegramManager {
                 // Ignore any message older than 30 seconds to prevent replay storms
                 const msgAge = Math.floor(Date.now() / 1000) - (update.message.date || 0);
                 if (msgAge <= 30) {
-                  this.handleIncomingMessage(update.message);
+                  this.handleIncomingMessage(update.message, whopGate);
                 }
               }
             }
@@ -69,9 +69,10 @@ class TelegramManager {
     poll();
   }
 
-  async handleIncomingMessage(msg) {
+  async handleIncomingMessage(msg, whopGate) {
     const chatId = msg.chat.id;
     const text = (msg.text || '').trim();
+    const userId = msg.from.id;
 
     if (text === '/start') {
       const welcome = `
@@ -82,12 +83,33 @@ We monitor real-time institutional liquidation cascades, whale order flow, and l
 *Available Commands:*
 • /status — Check live WebSocket & radar health
 • /plans — View VIP Membership & Whop pricing
+• \`/auth email@adresin.com\` — Link your Whop VIP account
 
 🔒 *VIP Channel Access:*
 Subscribe on Whop to unlock unfiltered real-time alerts:
 ${config.whop.productUrl}
 `.trim();
       await this.sendMessage(chatId, welcome);
+    } else if (text.startsWith('/auth ')) {
+      const email = text.replace('/auth ', '').trim().toLowerCase();
+      // WhopGate DB'sinden bu emaile sahip aktif kullanıcıyı bulalım
+      const db = whopGate.db.members;
+      let foundMember = null;
+      for (const key in db) {
+        if (db[key].email.toLowerCase() === email && db[key].status === 'active') {
+          foundMember = db[key];
+          break;
+        }
+      }
+
+      if (foundMember) {
+        foundMember.telegramId = userId; // ID Eşleştirildi!
+        whopGate.saveDb();
+        await this.sendMessage(chatId, `✅ *Başarılı!* Whop hesabın eşleştirildi.\n\nVIP Kanala Katıl: ${config.telegram.inviteLink}`);
+      } else {
+        await this.sendMessage(chatId, `❌ *Hata:* '${email}' adresine ait aktif bir VIP aboneliği bulunamadı. Lütfen Whop üzerinden satın aldığınız emaili doğru girdiğinizden emin olun.`);
+      }
+
     } else if (text === '/status') {
       const statusText = `
 🟢 *ApexRadar Systems: Operational*
@@ -145,6 +167,38 @@ ${config.whop.productUrl}
       return false;
     }
     return await this.sendMessage(this.freeChannelId, formattedMessage);
+  }
+
+  async kickMember(userId) {
+    if (!this.channelId || !this.channelId.startsWith('-100')) return false;
+    
+    try {
+      const res = await fetch(`${this.baseUrl}/banChatMember`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: this.channelId,
+          user_id: userId,
+          revoke_messages: false // Don't delete their past messages, just kick
+        })
+      });
+      if (res.ok) {
+        console.log(`👢 [TelegramManager] Kullanıcı kanaldan atıldı: ${userId}`);
+        
+        // Optional: unban them immediately so they can rejoin if they pay again
+        await fetch(`${this.baseUrl}/unbanChatMember`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chat_id: this.channelId, user_id: userId, only_if_banned: true })
+        });
+        
+        return true;
+      }
+      return false;
+    } catch (e) {
+      console.error('❌ [TelegramManager] Kick error:', e.message);
+      return false;
+    }
   }
 
   stop() {

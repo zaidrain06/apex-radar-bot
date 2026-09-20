@@ -11,19 +11,18 @@ console.log('💰 Recurring Revenue Engine (VNT-003)              ');
 console.log('====================================================');
 
 // 1. Initialize Subsystems
+// 1. Initialize Subsystems
 const binanceEngine = new BinanceStreamEngine();
 const telegram = new TelegramManager();
 const whopGate = new WhopGate();
 
-telegram.init();
+telegram.init(whopGate);
 
 // 2. Wire Up Events: Liquidation Signals → VIP + Free channel broadcast
 binanceEngine.on('liquidation', async (signalData) => {
-  // VIP channel always gets the full signal
   const vipMsg = formatLiquidationSignal(signalData);
   await telegram.sendAlert(vipMsg);
 
-  // Free channel gets a teaser with VIP CTA (only if free channel is configured)
   const freeMsg = formatFreeSignal(
     signalData,
     config.telegram.whopUrl,
@@ -32,11 +31,10 @@ binanceEngine.on('liquidation', async (signalData) => {
   await telegram.sendFreeAlert(freeMsg);
 });
 
-// 3. Wire Up Events: Cascade Alerts → VIP ONLY (most valuable signal, never free)
+// 3. Wire Up Events: Cascade Alerts → VIP ONLY
 binanceEngine.on('cascade', async (cascadeData) => {
   const formattedMsg = formatCascadeSignal(cascadeData);
   await telegram.sendAlert(formattedMsg);
-  // Cascades intentionally NOT sent to free channel — this is the premium differentiator
 });
 
 // 4. Start WebSocket Listener
@@ -97,7 +95,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/webhooks/whop') {
     let body = '';
     req.on('data', chunk => { body += chunk; });
-    req.on('end', () => {
+    req.on('end', async () => {
       const sig = req.headers['x-whop-signature'];
       if (!whopGate.verifyWebhook(body, sig)) {
         res.writeHead(401, { 'Content-Type': 'application/json' });
@@ -107,6 +105,12 @@ const server = http.createServer((req, res) => {
       try {
         const event = JSON.parse(body);
         const result = whopGate.handleEvent(event);
+        
+        // KICK LOGIC
+        if (result.status === 'revoked_kick' && result.telegramId) {
+           await telegram.kickMember(result.telegramId);
+        }
+
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify(result));
       } catch (e) {
