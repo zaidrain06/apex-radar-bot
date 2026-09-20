@@ -15,7 +15,7 @@ console.log('====================================================');
 const binanceEngine = new BinanceStreamEngine();
 const telegram = new TelegramManager();
 const whopGate = new WhopGate();
-const paperTrader = new PaperTrader(telegram, config.telegram.adminChatId);
+const paperTrader = new PaperTrader(telegram, process.env.TELEGRAM_ADMIN_CHAT_ID || '1339587201');
 
 telegram.init(whopGate);
 

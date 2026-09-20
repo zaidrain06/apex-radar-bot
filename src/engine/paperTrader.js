@@ -1,4 +1,4 @@
-const fetch = require('node-fetch');
+// Native fetch is available in Node 18+, no need to require external node-fetch
 
 class PaperTrader {
   constructor(telegramManager, adminChatId) {
