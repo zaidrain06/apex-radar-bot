@@ -6,7 +6,7 @@ module.exports = {
     wsBaseUrl: 'wss://fstream.binance.com',
     liquidationStream: '/market/ws/!forceOrder@arr',
     // Minimum threshold for a single liquidation to trigger an alert ($ USD)
-    minLiquidationUsd: parseFloat(process.env.MIN_LIQUIDATION_USD || '1'),
+    minLiquidationUsd: parseFloat(process.env.MIN_LIQUIDATION_USD || '25000'),
     megaLiquidationUsd: parseFloat(process.env.MEGA_LIQUIDATION_USD || '150000'),
     // Cascade settings: 3+ liquidations on same asset within 15 seconds
     cascadeWindowMs: 15000,
