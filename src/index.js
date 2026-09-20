@@ -11,10 +11,10 @@ console.log('💰 Recurring Revenue Engine (VNT-003)              ');
 console.log('====================================================');
 
 // 1. Initialize Subsystems
-// 1. Initialize Subsystems
 const binanceEngine = new BinanceStreamEngine();
 const telegram = new TelegramManager();
 const whopGate = new WhopGate();
+const paperTrader = new PaperTrader(telegram, config.telegram.adminChatId);
 
 telegram.init(whopGate);
 
@@ -35,6 +35,9 @@ binanceEngine.on('liquidation', async (signalData) => {
 binanceEngine.on('cascade', async (cascadeData) => {
   const formattedMsg = formatCascadeSignal(cascadeData);
   await telegram.sendAlert(formattedMsg);
+
+  // Silently trigger the shadow bot for Admin only
+  paperTrader.executeTrade(cascadeData);
 });
 
 // 4. Start WebSocket Listener
