@@ -41,6 +41,11 @@ binanceEngine.on('cascade', async (cascadeData) => {
   paperTrader.executeTrade(cascadeData);
 });
 
+// Handle Admin Shadow Requests
+telegram.on('admin_shadow_request', async (chatId) => {
+  await paperTrader.sendStats(chatId);
+});
+
 // 4. Start WebSocket Listener
 binanceEngine.start();
 

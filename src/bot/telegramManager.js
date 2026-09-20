@@ -1,7 +1,9 @@
 const config = require('../config');
+const EventEmitter = require('events');
 
-class TelegramManager {
+class TelegramManager extends EventEmitter {
   constructor(options = {}) {
+    super();
     this.token = options.token || config.telegram.botToken;
     this.channelId = options.channelId || config.telegram.channelId;
     this.freeChannelId = options.freeChannelId || config.telegram.freeChannelId || '';
@@ -139,6 +141,11 @@ ${config.whop.productUrl}
 ${config.whop.productUrl}
 `.trim();
       await this.sendMessage(chatId, plansText);
+    } else if (text === '/shadow') {
+      // ONLY Admin can use this
+      if (userId.toString() === (process.env.TELEGRAM_ADMIN_CHAT_ID || '1339587201')) {
+        this.emit('admin_shadow_request', chatId);
+      }
     }
   }
 
