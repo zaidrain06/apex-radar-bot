@@ -90,7 +90,7 @@ ${headerEmoji} *ApexRadar Free Radar* ${headerEmoji}
 💲 Price Zone: $${priceFormatted}
 ━━━━━━━━━━━━━━━━━━━━━
 🔒 *Cascade alerts, squeeze analysis & all signals in VIP*
-👉 Get VIP Access — $14.99/mo:
+👉 Get VIP Access — $9.99 (1st Month) 🔥:
 ${whopUrl}
 📲 VIP Telegram Channel:
 ${inviteLink}
