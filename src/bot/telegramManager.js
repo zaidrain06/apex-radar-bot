@@ -132,7 +132,7 @@ ${config.whop.productUrl}
 💎 *ApexRadar VIP Membership Plans*
 ━━━━━━━━━━━━━━━━━━━━━
 • 1st Month Special: *$9.99* 🔥 (then $14.99/mo)
-• Lifetime VIP: *$199.99* 👑 (One-time payment)
+• Annual VIP: *$149.99 / Year* 👑 (Save ~20%)
 • Full Access: Instant Telegram VIP Broadcast
 
 👉 *Instant Activation on Whop:*
