@@ -16,12 +16,15 @@ module.exports = {
   // Telegram Configuration
   telegram: {
     botToken: process.env.TELEGRAM_BOT_TOKEN || '',
-    // If TELEGRAM_CHANNEL_ID is personal ID (positive number), fallback to VIP channel (-100...)
+    // VIP Channel — paid subscribers only (cascade + all signals)
     channelId: (process.env.TELEGRAM_CHANNEL_ID && process.env.TELEGRAM_CHANNEL_ID.startsWith('-100'))
       ? process.env.TELEGRAM_CHANNEL_ID
       : '-1004208031753',
+    // FREE Channel — public, filtered big liquidations + VIP CTA
+    freeChannelId: process.env.TELEGRAM_FREE_CHANNEL_ID || '',
     adminChatId: process.env.TELEGRAM_ADMIN_CHAT_ID || '1339587201',
-    inviteLink: process.env.TELEGRAM_INVITE_LINK || 'https://t.me/+7olzpqcRqMthNmM0'
+    inviteLink: process.env.TELEGRAM_INVITE_LINK || 'https://t.me/+7olzpqcRqMthNmM0',
+    whopUrl: process.env.WHOP_PRODUCT_URL || 'https://whop.com/apexradar/apexradar-vip-intelligence'
   },
 
   // Whop Configuration

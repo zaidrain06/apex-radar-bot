@@ -68,7 +68,32 @@ function formatCascadeSignal(data) {
 `.trim();
 }
 
+/**
+ * Free channel teaser — shows the liquidation but hides cascade analysis.
+ * Always appends a VIP upsell CTA.
+ */
+function formatFreeSignal(data, whopUrl, inviteLink) {
+  const { symbol, side, price, usdValue, isMega } = data;
+  const isLong = side === 'SELL';
+  const direction = isLong ? '🔴 LONG LİKİDE' : '🟢 SHORT LİKİDE';
+  const cleanSymbol = symbol.replace('USDT', '');
+  const headerEmoji = isMega ? '🚨🚨🚨' : (isLong ? '🔴' : '🟢');
+
+  return `
+${headerEmoji} *ApexRadar Free Radar* ${headerEmoji}
+━━━━━━━━━━━━━━━━━━━━━
+🪙 *${cleanSymbol}/USDT* — ${direction}
+💰 *$${Math.round(usdValue).toLocaleString()} USD* tasfiye edildi
+💲 Fiyat bölgesi: \`$${price >= 1000 ? price.toLocaleString('en-US', { minimumFractionDigits: 2 }) : price.toFixed(4)}\`
+━━━━━━━━━━━━━━━━━━━━━
+🔒 *Kaskad alarmları, squeeze analizi ve tüm sinyaller sadece VIP'te*
+👉 [VIP'e Geç — $29.99/ay](${whopUrl})
+📲 [VIP Telegram Kanalı](${inviteLink})
+`.trim();
+}
+
 module.exports = {
   formatLiquidationSignal,
-  formatCascadeSignal
+  formatCascadeSignal,
+  formatFreeSignal
 };

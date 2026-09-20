@@ -3,7 +3,7 @@ const config = require('./config');
 const BinanceStreamEngine = require('./engine/binanceStreams');
 const TelegramManager = require('./bot/telegramManager');
 const WhopGate = require('./whop/whopGate');
-const { formatLiquidationSignal, formatCascadeSignal } = require('./formatters/signalFormatter');
+const { formatLiquidationSignal, formatCascadeSignal, formatFreeSignal } = require('./formatters/signalFormatter');
 
 console.log('====================================================');
 console.log('⚡ APEXRADAR: CRYPTO WHALE & LIQUIDATION BOT        ');
@@ -17,16 +17,26 @@ const whopGate = new WhopGate();
 
 telegram.init();
 
-// 2. Wire Up Events: Liquidation Signals -> Telegram Broadcast
+// 2. Wire Up Events: Liquidation Signals → VIP + Free channel broadcast
 binanceEngine.on('liquidation', async (signalData) => {
-  const formattedMsg = formatLiquidationSignal(signalData);
-  await telegram.sendAlert(formattedMsg);
+  // VIP channel always gets the full signal
+  const vipMsg = formatLiquidationSignal(signalData);
+  await telegram.sendAlert(vipMsg);
+
+  // Free channel gets a teaser with VIP CTA (only if free channel is configured)
+  const freeMsg = formatFreeSignal(
+    signalData,
+    config.telegram.whopUrl,
+    config.telegram.inviteLink
+  );
+  await telegram.sendFreeAlert(freeMsg);
 });
 
-// 3. Wire Up Events: Cascade Alerts -> Telegram Broadcast
+// 3. Wire Up Events: Cascade Alerts → VIP ONLY (most valuable signal, never free)
 binanceEngine.on('cascade', async (cascadeData) => {
   const formattedMsg = formatCascadeSignal(cascadeData);
   await telegram.sendAlert(formattedMsg);
+  // Cascades intentionally NOT sent to free channel — this is the premium differentiator
 });
 
 // 4. Start WebSocket Listener

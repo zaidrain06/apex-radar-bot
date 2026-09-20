@@ -4,6 +4,7 @@ class TelegramManager {
   constructor(options = {}) {
     this.token = options.token || config.telegram.botToken;
     this.channelId = options.channelId || config.telegram.channelId;
+    this.freeChannelId = options.freeChannelId || config.telegram.freeChannelId || '';
     this.baseUrl = `https://api.telegram.org/bot${this.token}`;
     this.isPolling = false;
     this.lastUpdateId = 0;
@@ -135,6 +136,15 @@ ${config.whop.productUrl}
       : '-1004208031753';
 
     return await this.sendMessage(channelTarget, formattedMessage);
+  }
+
+  async sendFreeAlert(formattedMessage) {
+    // Only send if a free channel is configured
+    if (!this.freeChannelId || !this.freeChannelId.startsWith('-100')) {
+      console.log('ℹ️ [TelegramManager] Free channel not configured, skipping free broadcast.');
+      return false;
+    }
+    return await this.sendMessage(this.freeChannelId, formattedMessage);
   }
 
   stop() {
