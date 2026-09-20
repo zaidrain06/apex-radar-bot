@@ -101,37 +101,54 @@ class BinanceStreamEngine extends EventEmitter {
   }
 
   trackCascade(symbol, side, price, usdValue, timestamp) {
-    const windowMs = config.binance.cascadeWindowMs;
-    const thresholdCount = config.binance.cascadeCountThreshold;
-
+    const windowMs = config.binance.cascadeWindowMs || 15000; // 15 seconds
+    const minCascadeUsd = 100000; // Total cascade volume must be > $100k
+    
+    // Initialize state if missing
     if (!this.cascadeWindows.has(symbol)) {
-      this.cascadeWindows.set(symbol, []);
+      this.cascadeWindows.set(symbol, { events: [], lastCascadeTime: 0 });
     }
 
-    const events = this.cascadeWindows.get(symbol);
+    const state = this.cascadeWindows.get(symbol);
     const now = timestamp || Date.now();
 
-    // Remove expired events outside the window
-    const activeEvents = events.filter(e => (now - e.timestamp) <= windowMs);
-    activeEvents.push({ side, price, usdValue, timestamp: now });
-    this.cascadeWindows.set(symbol, activeEvents);
+    // 60-second Cooldown: Do not alert multiple cascades for the same coin in a single drop
+    if (now - state.lastCascadeTime < 60000) {
+      return;
+    }
 
-    // If threshold met on same side (all long or all short cascade)
-    const sameSideEvents = activeEvents.filter(e => e.side === side);
-    if (sameSideEvents.length === thresholdCount) {
-      // Trigger cascade once per burst
+    // Remove expired events outside the 15-second window
+    state.events = state.events.filter(e => (now - e.timestamp) <= windowMs);
+    state.events.push({ side, price, usdValue, timestamp: now });
+
+    // Filter events by the same side (Long squeeze or Short squeeze)
+    const sameSideEvents = state.events.filter(e => e.side === side);
+    
+    // Core Aggressive Squeeze Logic: 
+    // Minimum 5 liquidations AND Total cumulative volume over $100k
+    if (sameSideEvents.length >= 5) {
       const totalUsd = sameSideEvents.reduce((acc, e) => acc + e.usdValue, 0);
-      const avgPrice = sameSideEvents.reduce((acc, e) => acc + e.price, 0) / sameSideEvents.length;
+      
+      if (totalUsd >= minCascadeUsd) {
+        // Trigger condition met!
+        const avgPrice = sameSideEvents.reduce((acc, e) => acc + e.price, 0) / sameSideEvents.length;
 
-      this.stats.cascadesEmitted++;
-      this.emit('cascade', {
-        symbol,
-        count: sameSideEvents.length,
-        side,
-        totalUsd,
-        avgPrice,
-        timestamp: now
-      });
+        // Set Cooldown
+        state.lastCascadeTime = now;
+        this.cascadeWindows.set(symbol, state);
+
+        this.stats.cascadesEmitted++;
+        this.emit('cascade', {
+          symbol,
+          count: sameSideEvents.length,
+          side,
+          totalUsd,
+          avgPrice,
+          timestamp: now
+        });
+      }
+    } else {
+      this.cascadeWindows.set(symbol, state);
     }
   }
 

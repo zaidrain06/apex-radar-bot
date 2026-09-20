@@ -51,20 +51,21 @@ ${insight}
 function formatCascadeSignal(data) {
   const { symbol, count, totalUsd, side, avgPrice } = data;
   const isLong = side === 'SELL';
-  const typeText = isLong ? 'MASS LONG CASCADE' : 'MASS SHORT SQUEEZE';
+  const typeText = isLong ? 'MASS LONG CASCADE (SQUEEZE DOWN) 🩸' : 'MASS SHORT SQUEEZE (PUMP) 🚀';
   const cleanSymbol = symbol.replace('USDT', '');
+  const emoji = isLong ? '🩸🩸🩸' : '🚀🚀🚀';
 
   return `
-🌊🌊 *LIQUIDATION CASCADE DETECTED!* 🌊🌊
+${emoji} *LIQUIDATION CASCADE DETECTED!* ${emoji}
 ━━━━━━━━━━━━━━━━━━━━━
 🪙 *Asset:* #${cleanSymbol} / USDT
-⚡ *Cascade Type:* *${typeText}*
-🔥 *Total Liquidations:* *${count} orders in < 15s*
+⚡ *Event:* *${typeText}*
+🔥 *Intensity:* *${count} Liquidations in <15s*
 💰 *Cumulative Drain:* *$${formatNumber(totalUsd)} USD*
 📍 *Average Zone:* \`$${formatPrice(avgPrice)}\`
 ━━━━━━━━━━━━━━━━━━━━━
-⚠️ *High Volatility Warning:* Cascade in progress. Rapid momentum continuation expected.
-🛰 _ApexRadar Real-Time Intelligence_
+⚠️ *Actionable Insight:* Major volatility cluster. Wait for fakeout or momentum continuation.
+🛰 _ApexRadar VIP Intelligence_
 `.trim();
 }
 
