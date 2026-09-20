@@ -75,7 +75,7 @@ function formatCascadeSignal(data) {
 function formatFreeSignal(data, whopUrl, inviteLink) {
   const { symbol, side, price, usdValue, isMega } = data;
   const isLong = side === 'SELL';
-  const direction = isLong ? '🔴 LONG LİKİDE' : '🟢 SHORT LİKİDE';
+  const direction = isLong ? '🔴 LONG LIQUIDATED' : '🟢 SHORT LIQUIDATED';
   const cleanSymbol = symbol.replace('USDT', '');
   const headerEmoji = isMega ? '🚨🚨🚨' : (isLong ? '🔴' : '🟢');
 
@@ -86,13 +86,13 @@ function formatFreeSignal(data, whopUrl, inviteLink) {
 ${headerEmoji} *ApexRadar Free Radar* ${headerEmoji}
 ━━━━━━━━━━━━━━━━━━━━━
 🪙 *${cleanSymbol}/USDT* — ${direction}
-💰 *$${usdFormatted} USD* tasfiye edildi
-💲 Fiyat bölgesi: $${priceFormatted}
+💰 *$${usdFormatted} USD* liquidated
+💲 Price Zone: $${priceFormatted}
 ━━━━━━━━━━━━━━━━━━━━━
-🔒 *Kaskad alarmları, squeeze analizi ve tüm sinyaller sadece VIP'te*
-👉 VIP'e Geç — $29.99/ay:
+🔒 *Cascade alerts, squeeze analysis & all signals in VIP*
+👉 Get VIP Access — $29.99/mo:
 ${whopUrl}
-📲 VIP Telegram Kanalı:
+📲 VIP Telegram Channel:
 ${inviteLink}
 `.trim();
 }
