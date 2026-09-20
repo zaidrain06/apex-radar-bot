@@ -33,7 +33,7 @@ module.exports = {
     webhookSecret: process.env.WHOP_WEBHOOK_SECRET || '',
     planId: process.env.WHOP_PLAN_ID || 'plan_apex_vip_monthly',
     productUrl: 'https://whop.com/apexradar/apexradar-vip-intelligence',
-    priceUsd: 29.99
+    priceUsd: 14.99
   },
 
   // Server port for webhook listeners and health checks
