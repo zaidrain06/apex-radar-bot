@@ -79,16 +79,21 @@ function formatFreeSignal(data, whopUrl, inviteLink) {
   const cleanSymbol = symbol.replace('USDT', '');
   const headerEmoji = isMega ? '🚨🚨🚨' : (isLong ? '🔴' : '🟢');
 
+  const priceFormatted = price >= 1000 ? price.toLocaleString('en-US', { minimumFractionDigits: 2 }) : price.toFixed(4);
+  const usdFormatted = Math.round(usdValue).toLocaleString('en-US');
+
   return `
 ${headerEmoji} *ApexRadar Free Radar* ${headerEmoji}
 ━━━━━━━━━━━━━━━━━━━━━
 🪙 *${cleanSymbol}/USDT* — ${direction}
-💰 *$${Math.round(usdValue).toLocaleString()} USD* tasfiye edildi
-💲 Fiyat bölgesi: \`$${price >= 1000 ? price.toLocaleString('en-US', { minimumFractionDigits: 2 }) : price.toFixed(4)}\`
+💰 *$${usdFormatted} USD* tasfiye edildi
+💲 Fiyat bölgesi: $${priceFormatted}
 ━━━━━━━━━━━━━━━━━━━━━
 🔒 *Kaskad alarmları, squeeze analizi ve tüm sinyaller sadece VIP'te*
-👉 [VIP'e Geç — $29.99/ay](${whopUrl})
-📲 [VIP Telegram Kanalı](${inviteLink})
+👉 VIP'e Geç — $29.99/ay:
+${whopUrl}
+📲 VIP Telegram Kanalı:
+${inviteLink}
 `.trim();
 }
 
