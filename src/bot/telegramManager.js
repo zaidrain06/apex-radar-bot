@@ -110,6 +110,14 @@ ${config.whop.productUrl}
         await this.sendMessage(chatId, `❌ *Hata:* '${email}' adresine ait aktif bir VIP aboneliği bulunamadı. Lütfen Whop üzerinden satın aldığınız emaili doğru girdiğinizden emin olun.`);
       }
 
+    } else if (text === '/debug') {
+      const debugText = `
+🛠 *Debug Info:*
+• VIP Channel ID: ${this.channelId}
+• Free Channel ID: ${this.freeChannelId || 'BOŞ (Okunamadı)'}
+• Env Token: ${this.token ? 'YÜKLÜ' : 'YOK'}
+`.trim();
+      await this.sendMessage(chatId, debugText);
     } else if (text === '/status') {
       const statusText = `
 🟢 *ApexRadar Systems: Operational*
