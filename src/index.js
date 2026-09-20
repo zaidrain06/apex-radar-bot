@@ -3,6 +3,7 @@ const config = require('./config');
 const BinanceStreamEngine = require('./engine/binanceStreams');
 const TelegramManager = require('./bot/telegramManager');
 const WhopGate = require('./whop/whopGate');
+const PaperTrader = require('./engine/paperTrader');
 const { formatLiquidationSignal, formatCascadeSignal, formatFreeSignal } = require('./formatters/signalFormatter');
 
 console.log('====================================================');
