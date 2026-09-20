@@ -144,9 +144,13 @@ ${config.whop.productUrl}
           parse_mode: 'Markdown'
         })
       });
+      if (!res.ok) {
+        const errorData = await res.json();
+        console.error(`❌ [TelegramManager] Send error to ${chatId}:`, errorData.description || errorData);
+      }
       return res.ok;
     } catch (err) {
-      console.error('❌ [TelegramManager] Send error:', err.message);
+      console.error(`❌ [TelegramManager] Send exception to ${chatId}:`, err.message);
       return false;
     }
   }
