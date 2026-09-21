@@ -75,7 +75,7 @@ class BinanceStreamEngine extends EventEmitter {
       const usdValue = price * qty;
       const timestamp = order.T || Date.now();
 
-      // Check Cascade Window
+      // Check Cascade Window for all incoming liquidations
       this.trackCascade(symbol, side, price, usdValue, timestamp);
 
       // Filter by Minimum USD threshold
@@ -102,8 +102,8 @@ class BinanceStreamEngine extends EventEmitter {
 
   trackCascade(symbol, side, price, usdValue, timestamp) {
     const windowMs = config.binance.cascadeWindowMs || 15000; // 15 seconds
-    const minCascadeUsd = 100000; // Total cascade volume must be > $100k
-    
+    const minCascadeUsd = 25000; // Total cascade volume > $25k to trigger Free channel
+
     // Initialize state if missing
     if (!this.cascadeWindows.has(symbol)) {
       this.cascadeWindows.set(symbol, { events: [], lastCascadeTime: 0 });
@@ -125,8 +125,8 @@ class BinanceStreamEngine extends EventEmitter {
     const sameSideEvents = state.events.filter(e => e.side === side);
     
     // Core Aggressive Squeeze Logic: 
-    // Minimum 5 liquidations AND Total cumulative volume over $100k
-    if (sameSideEvents.length >= 5) {
+    // Minimum 3 liquidations AND Total cumulative volume over $25k
+    if (sameSideEvents.length >= 3) {
       const totalUsd = sameSideEvents.reduce((acc, e) => acc + e.usdValue, 0);
       
       if (totalUsd >= minCascadeUsd) {
