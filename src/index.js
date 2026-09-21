@@ -19,17 +19,10 @@ const paperTrader = new PaperTrader(telegram, process.env.TELEGRAM_ADMIN_CHAT_ID
 
 telegram.init(whopGate);
 
-// 2. Wire Up Events: Liquidation Signals → VIP + Free channel broadcast
+// 2. Wire Up Events: Liquidation Signals → VIP ONLY (Standard >25k & Mega >150k)
 binanceEngine.on('liquidation', async (signalData) => {
   const vipMsg = formatLiquidationSignal(signalData);
   await telegram.sendAlert(vipMsg);
-
-  const freeMsg = formatFreeSignal(
-    signalData,
-    config.telegram.whopUrl,
-    config.telegram.inviteLink
-  );
-  await telegram.sendFreeAlert(freeMsg);
 });
 
 // 3. Wire Up Events: Cascade Alerts → VIP ONLY
