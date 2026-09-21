@@ -25,10 +25,14 @@ binanceEngine.on('liquidation', async (signalData) => {
   await telegram.sendAlert(vipMsg);
 });
 
-// 3. Wire Up Events: Cascade Alerts → VIP ONLY
+// 3. Wire Up Events: Cascade Alerts → VIP & Free Channel
 binanceEngine.on('cascade', async (cascadeData) => {
   const formattedMsg = formatCascadeSignal(cascadeData);
   await telegram.sendAlert(formattedMsg);
+
+  // Send marketing tease to Free Channel
+  const freeMsg = formatFreeSignal(cascadeData);
+  await telegram.sendFreeAlert(freeMsg);
 
   // Silently trigger the shadow bot for Admin only
   paperTrader.executeTrade(cascadeData);
