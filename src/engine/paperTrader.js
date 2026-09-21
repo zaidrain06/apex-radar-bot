@@ -1,17 +1,51 @@
 // Native fetch is available in Node 18+, no need to require external node-fetch
+const fs = require('fs');
+const path = require('path');
 
 class PaperTrader {
   constructor(telegramManager, adminChatId) {
     this.telegram = telegramManager;
     this.adminChatId = adminChatId;
-    this.balance = 10000; // Starting fake balance: $10,000
-    this.tradeAmount = 1000; // Position size per trade: $1,000
+    this.dbPath = path.join(__dirname, '../../shadow_state.json');
     this.leverage = 10; // 10x Leverage
+    this.tradeAmount = 1000; // $1,000 per trade
     
-    // Stats tracking
+    // Default stats
+    this.balance = 10000;
     this.winCount = 0;
     this.lossCount = 0;
-    this.activeTrades = new Map(); // Keep track of pending closures
+    
+    // Load existing state if it survives deployment
+    this.loadState();
+    
+    this.activeTrades = new Map(); // Pendings are kept in RAM since 3 min wait resets on deploy anyway
+  }
+
+  loadState() {
+    try {
+      if (fs.existsSync(this.dbPath)) {
+        const raw = fs.readFileSync(this.dbPath, 'utf8');
+        const data = JSON.parse(raw);
+        this.balance = data.balance ?? 10000;
+        this.winCount = data.winCount ?? 0;
+        this.lossCount = data.lossCount ?? 0;
+      }
+    } catch (e) {
+      console.error('❌ [PaperTrader] loadState error:', e.message);
+    }
+  }
+
+  saveState() {
+    try {
+      const data = {
+        balance: this.balance,
+        winCount: this.winCount,
+        lossCount: this.lossCount
+      };
+      fs.writeFileSync(this.dbPath, JSON.stringify(data, null, 2));
+    } catch (e) {
+      console.error('❌ [PaperTrader] saveState error:', e.message);
+    }
   }
 
   async sendStats(requestChatId) {
@@ -98,6 +132,8 @@ ${pnlEmoji} *Net PnL:* \`$${netProfit.toFixed(2)}\`
         
         if (leveragedPnlUsd >= 0) this.winCount++;
         else this.lossCount++;
+
+        this.saveState();
 
         this.activeTrades.delete(tradeId); // Correctly delete the specific trade
 

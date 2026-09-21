@@ -31,7 +31,7 @@ binanceEngine.on('cascade', async (cascadeData) => {
   await telegram.sendAlert(formattedMsg);
 
   // Send marketing tease to Free Channel
-  const freeMsg = formatFreeSignal(cascadeData);
+  const freeMsg = formatFreeSignal(cascadeData, config);
   await telegram.sendFreeAlert(freeMsg);
 
   // Silently trigger the shadow bot for Admin only

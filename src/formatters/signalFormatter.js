@@ -4,10 +4,12 @@
  */
 
 function formatNumber(num) {
+  if (isNaN(num) || num === undefined || num === null) return '0';
   return Math.round(num).toLocaleString('en-US');
 }
 
 function formatPrice(price) {
+  if (isNaN(price) || price === undefined || price === null) return '0.00';
   if (price >= 1000) return price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   if (price >= 1) return price.toFixed(4);
   return price.toFixed(6);
@@ -19,84 +21,77 @@ function getSignalEmoji(side, usdValue, isMega) {
 }
 
 function formatLiquidationSignal(data) {
-  const { symbol, side, price, qty, usdValue, isMega } = data;
-  const isLong = side === 'SELL'; // Longs get liquidated by sell orders
-  const direction = isLong ? '🔴 LONG LIQUIDATED' : '🟢 SHORT LIQUIDATED';
+  const { symbol, side, price, qty, usdValue, isMega, timestamp } = data;
+  const isLong = side === 'SELL';
+  const typeText = isLong ? 'LONG LIQUIDATED (Squeeze Down)' : 'SHORT LIQUIDATED (Squeeze Up)';
+  const headerEmoji = getSignalEmoji(side, usdValue, isMega);
+
   const cleanSymbol = symbol.replace('USDT', '');
-  const headerEmoji = isMega ? '🚨 MEGA LIQUIDATION' : '💥 LIQUIDATION';
+  const dateStr = new Date(timestamp || Date.now()).toISOString().substring(11, 19) + ' UTC';
 
-  const priceFormatted = price >= 1000 ? price.toLocaleString('en-US', { minimumFractionDigits: 2 }) : price.toFixed(4);
-  const usdFormatted = Math.round(usdValue).toLocaleString('en-US');
-  const qtyFormatted = qty.toLocaleString('en-US', { maximumFractionDigits: 4 });
+  let banner = isMega ? '⚡ MEGA WHALE LIQUIDATION ALERT ⚡' : '💥 WHALE LIQUIDATION RADAR';
+  let insight = isLong 
+    ? '⚠️ <b>Market Impact:</b> Longs flushed out. Potential liquidity sweep at support.'
+    : '🚀 <b>Market Impact:</b> Shorts trapped. Potential upward momentum or local top.';
 
-  // Note: Using precise, clean markdown to prevent Telegram parser errors
+  // Using HTML Parse Mode for safety
   return `
-${headerEmoji}
+${headerEmoji} <b>${banner}</b> ${headerEmoji}
 ━━━━━━━━━━━━━━━━━━━━━
-🪙 Asset: #${cleanSymbol} / USDT
-⚡ Event: ${direction}
-💰 Value: $${usdFormatted}
-💲 Price: $${priceFormatted}
-📦 Size: ${qtyFormatted} ${cleanSymbol}
+🪙 <b>Asset:</b> #${cleanSymbol} / USDT
+📊 <b>Event:</b> <b>${typeText}</b>
+💰 <b>Volume:</b> <b>$${formatNumber(usdValue)} USD</b>
+🎯 <b>Liquidation Price:</b> <code>$${formatPrice(price)}</code>
+📦 <b>Contract Qty:</b> <code>${qty.toLocaleString('en-US')} ${cleanSymbol}</code>
+⏰ <b>Time:</b> <code>${dateStr}</code>
 ━━━━━━━━━━━━━━━━━━━━━
+${insight}
+🛰 <i>Powered by ApexRadar VIP</i>
   `.trim();
 }
 
-/**
- * Format a Cascade (Squeeze) event for VIP (e.g. 5+ liquidations within 15 seconds)
- */
 function formatCascadeSignal(data) {
   const { symbol, side, totalUsd, avgPrice, count } = data;
-  const isLong = side === 'SELL'; // Longs got squeezed -> Dump
-  const typeText = isLong ? 'LONG CASCADE / DUMP' : 'SHORT SQUEEZE / PUMP';
-  const emoji = isLong ? '🩸' : '🚀';
+  const isLong = side === 'SELL';
+  const typeText = isLong ? 'MASS LONG CASCADE (SQUEEZE DOWN) 🩸' : 'MASS SHORT SQUEEZE (PUMP) 🚀';
+  const emoji = isLong ? '🩸🩸🩸' : '🚀🚀🚀';
   const cleanSymbol = symbol.replace('USDT', '');
 
-  const priceFormatted = avgPrice >= 1000 ? avgPrice.toLocaleString('en-US', { minimumFractionDigits: 2 }) : avgPrice.toFixed(4);
-  
   return `
-${emoji} CASCADE DETECTED ${emoji}
+${emoji} <b>LIQUIDATION CASCADE DETECTED!</b> ${emoji}
 ━━━━━━━━━━━━━━━━━━━━━
-🪙 Asset: #${cleanSymbol} / USDT
-⚡ Event: ${typeText}
-🔥 Intensity: ${count} Liquidations in <15s
-💰 Cumulative Drain: $${formatNumber(totalUsd)} USD
-💲 Avg Price: $${priceFormatted}
+🪙 <b>Asset:</b> #${cleanSymbol} / USDT
+⚡ <b>Event:</b> <b>${typeText}</b>
+🔥 <b>Intensity:</b> <b>${count} Liquidations in &lt;15s</b>
+💰 <b>Cumulative Drain:</b> <b>$${formatNumber(totalUsd)} USD</b>
+📍 <b>Average Zone:</b> <code>$${formatPrice(avgPrice)}</code>
 ━━━━━━━━━━━━━━━━━━━━━
+⚠️ <b>Actionable Insight:</b> Major volatility cluster. Wait for fakeout or momentum continuation.
+🛰 <i>ApexRadar VIP Intelligence</i>
   `.trim();
 }
 
-/**
- * Free channel teaser — shows the liquidation but hides cascade analysis.
- * Always appends a VIP upsell CTA.
- */
-function formatFreeSignal(data, whopUrl, inviteLink) {
-  const { symbol, side, usdValue, isMega } = data;
+function formatFreeSignal(data, configObj) {
+  const { symbol, side, isMega } = data;
   const isLong = side === 'SELL';
   const direction = isLong ? '🔴 LONG LIQUIDATED' : '🟢 SHORT LIQUIDATED';
   const cleanSymbol = symbol.replace('USDT', '');
   const count = data.count || 3;
-  const totalUsd = data.totalUsd || 0;
+  // Fallback gracefully for usdValue (from standard liquidation) vs totalUsd (from cascade)
+  const usdValue = data.totalUsd || data.usdValue || 0;
   const headerEmoji = isMega ? '🚨🚨🚨' : (isLong ? '🔴' : '🟢');
-
-  // Cascade events provide avgPrice, regular liquidations provide price
   const price = data.avgPrice || data.price || 0;
 
-  const priceFormatted = price >= 1000 ? price.toLocaleString('en-US', { minimumFractionDigits: 2 }) : price.toFixed(4);
-  const usdFormatted = Math.round(usdValue).toLocaleString('en-US');
-
   return `
-${headerEmoji} *ApexRadar Free Radar* ${headerEmoji}
+${headerEmoji} <b>ApexRadar Free Radar</b> ${headerEmoji}
 ━━━━━━━━━━━━━━━━━━━━━
-🪙 *${cleanSymbol}/USDT* — ${direction}
-💰 *$${usdFormatted} USD* liquidated
-💲 Price Zone: $${priceFormatted}
+🪙 <b>${cleanSymbol}/USDT</b> — ${direction}
+💰 <b>$${formatNumber(usdValue)} USD</b> liquidated
+💲 Price Zone: <code>$${formatPrice(price)}</code>
 ━━━━━━━━━━━━━━━━━━━━━
-🔒 *Cascade alerts, squeeze analysis & all signals in VIP*
+🔒 <b>Cascade alerts, squeeze analysis & all signals in VIP</b>
 👉 Get VIP Access — $9.99 (1st Month) 🔥:
-${whopUrl}
-📲 VIP Telegram Channel:
-${inviteLink}
+${configObj.telegram.whopUrl}
 `.trim();
 }
 

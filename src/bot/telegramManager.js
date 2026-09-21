@@ -143,7 +143,7 @@ ${config.whop.productUrl}
       await this.sendMessage(chatId, plansText);
     } else if (text === '/shadow') {
       // ONLY Admin can use this
-      if (userId.toString() === (process.env.TELEGRAM_ADMIN_CHAT_ID || '1339587201')) {
+      if (chatId.toString() === (process.env.TELEGRAM_ADMIN_CHAT_ID || '1339587201').toString()) {
         this.emit('admin_shadow_request', chatId);
       }
     }
@@ -157,7 +157,7 @@ ${config.whop.productUrl}
         body: JSON.stringify({
           chat_id: chatId,
           text: text,
-          parse_mode: 'Markdown'
+          parse_mode: 'HTML'
         })
       });
       if (!res.ok) {
