@@ -23,10 +23,10 @@ class PaperTrader {
     if (this.activeTrades.size === 0) {
       activeList = 'None';
     } else {
-      for (const [symbol, trade] of this.activeTrades.entries()) {
+      for (const [tradeId, trade] of this.activeTrades.entries()) {
         const timePassed = Math.floor((Date.now() - trade.startTime) / 1000);
         const timeLeft = Math.max(0, 180 - timePassed);
-        activeList += `\n• #${symbol}: ${trade.type} @ $${trade.entryPrice} (${timeLeft}s left)`;
+        activeList += `\n• #${trade.symbol}: ${trade.type} @ $${trade.entryPrice} (${timeLeft}s left)`;
       }
     }
 
@@ -51,21 +51,20 @@ ${pnlEmoji} *Net PnL:* \`$${netProfit.toFixed(2)}\`
   async executeTrade(cascadeData) {
     if (!this.adminChatId) return;
 
-    // cascadeData has: symbol, side, avgPrice, totalUsd
-    // side === 'SELL' means Longs got liquidated (Price dropped). We counter-trade and go LONG.
     const tradeType = cascadeData.side === 'SELL' ? 'LONG' : 'SHORT';
     const entryPrice = cascadeData.avgPrice;
     const symbol = cascadeData.symbol;
     const cleanSymbol = symbol.replace('USDT', '');
+    const tradeId = Date.now().toString() + Math.floor(Math.random() * 1000).toString();
 
-    // Track active trade
-    this.activeTrades.set(cleanSymbol, {
+    // Track active trade with a UNIQUE ID so they don't overwrite each other
+    this.activeTrades.set(tradeId, {
+      symbol: cleanSymbol,
       type: tradeType,
       entryPrice: entryPrice,
       startTime: Date.now()
     });
 
-    // 1. Alert Admin about entry
     const entryMsg = `
 👻 *SHADOW BOT ENTRY*
 🪙 Asset: #${cleanSymbol}
@@ -76,7 +75,6 @@ ${pnlEmoji} *Net PnL:* \`$${netProfit.toFixed(2)}\`
     
     await this.telegram.sendMessage(this.adminChatId, entryMsg);
 
-    // 2. Wait exactly 3 minutes, then close position
     setTimeout(async () => {
       try {
         const res = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${symbol}`);
@@ -84,11 +82,10 @@ ${pnlEmoji} *Net PnL:* \`$${netProfit.toFixed(2)}\`
         const exitPrice = parseFloat(data.price);
 
         if (isNaN(exitPrice)) {
-          this.activeTrades.delete(cleanSymbol);
+          this.activeTrades.delete(tradeId);
           return;
         }
 
-        // Calculate PnL
         let pnlPercentage = 0;
         if (tradeType === 'LONG') {
           pnlPercentage = (exitPrice - entryPrice) / entryPrice;
@@ -102,7 +99,7 @@ ${pnlEmoji} *Net PnL:* \`$${netProfit.toFixed(2)}\`
         if (leveragedPnlUsd >= 0) this.winCount++;
         else this.lossCount++;
 
-        this.activeTrades.delete(cleanSymbol);
+        this.activeTrades.delete(tradeId); // Correctly delete the specific trade
 
         const pnlEmoji = leveragedPnlUsd >= 0 ? '✅ PROFIT' : '❌ LOSS';
         const closeMsg = `
@@ -119,9 +116,9 @@ ${pnlEmoji}: *$${leveragedPnlUsd.toFixed(2)}*
         await this.telegram.sendMessage(this.adminChatId, closeMsg);
       } catch (err) {
         console.error('❌ [PaperTrader] Fetch error:', err.message);
-        this.activeTrades.delete(cleanSymbol);
+        this.activeTrades.delete(tradeId);
       }
-    }, 3 * 60 * 1000); // 3 Minutes delay
+    }, 3 * 60 * 1000);
   }
 }
 
