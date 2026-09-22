@@ -141,7 +141,7 @@ class RealTrader {
         symbol: ccxtSymbol,
         side: orderSide,
         entryPrice: entryPrice,
-        amount: order.filled || amount,
+        amount: order.filled || contracts,
         slPrice,
         tpPrice,
         orderId: order.id,
@@ -150,21 +150,49 @@ class RealTrader {
 
       // Telegrama gerçek işleme girildiğini bildir
       const msg = `
-⚠️ <b>GERÇEK İŞLEM AÇILDI (TEST)</b> ⚠️
-━━━━━━━━━━━━━━━━━━━━━
-🪙 <b>${symbol}</b>
-⚡ Yön: <b>${orderSide.toUpperCase()}</b>
+🟢 <b>GERÇEK İŞLEM AÇILDI (TEST)</b> 🟢
+=====================
+🪙 <b>${ccxtSymbol}</b>
+🎯 Yön: <b>${orderSide.toUpperCase()}</b>
 💰 Büyüklük: <b>$${this.tradeAmountUsd} USD</b> (Teminat: ~$5)
-💲 Giriş Fiyatı: <code>$${entryPrice.toFixed(4)}</code>
-🛑 SL: <code>$${slPrice.toFixed(4)}</code> | 🎯 TP: <code>$${tpPrice.toFixed(4)}</code>
-━━━━━━━━━━━━━━━━━━━━━
-🛰 <i>RealTrader Engine v1</i>
+💵 Giriş Fiyatı: <code>$${entryPrice.toFixed(4)}</code>
+🛑 SL: <code>$${slPrice.toFixed(4)}</code> | 🟢 TP: <code>$${tpPrice.toFixed(4)}</code>
+=====================
+🤖 <i>RealTrader Engine v1</i>
       `.trim();
 
       await this.telegram.sendMessage(this.adminChatId, msg);
 
       // Bot 3 dakika sonra açık işlemi ne olursa olsun kapatacak (Acil Çıkış Koruması)
       setTimeout(() => this.closeTrade(tradeId), 3 * 60 * 1000);
+
+      // Fiyat Takip Döngüsü (SL / TP Vurma Kontrolü)
+      const monitorInterval = setInterval(async () => {
+        if (!this.activeTrades.has(tradeId)) {
+          clearInterval(monitorInterval);
+          return;
+        }
+        try {
+          const trade = this.activeTrades.get(tradeId);
+          const ticker = await this.exchange.fetchTicker(trade.symbol);
+          const currentPx = ticker.last;
+
+          let hitLimit = false;
+          if (trade.side === 'buy') {
+            if (currentPx >= trade.tpPrice || currentPx <= trade.slPrice) hitLimit = true;
+          } else {
+            if (currentPx <= trade.tpPrice || currentPx >= trade.slPrice) hitLimit = true;
+          }
+
+          if (hitLimit) {
+            console.log(`[RealTrader] 🛑 SL/TP LIMIT TETIKLENDI: ${trade.symbol} at ${currentPx}`);
+            clearInterval(monitorInterval);
+            this.closeTrade(tradeId);
+          }
+        } catch (e) {
+          // geçici API hatası olabilir, yoksay
+        }
+      }, 5000); // Her 5 saniyede bir kontrol
 
     } catch (error) {
       console.error(`❌ [RealTrader] Emir gönderilirken HATA:`, error.message);
