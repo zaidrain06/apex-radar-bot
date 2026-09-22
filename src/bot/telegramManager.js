@@ -122,11 +122,11 @@ ${config.whop.productUrl}
       await this.sendMessage(chatId, debugText);
     } else if (text === '/status') {
       const statusText = `
-🟢 *ApexRadar Systems: Operational*
+🟢 <b>ApexRadar Systems: Operational</b>
 • Feed: Binance Futures USD-M WebSocket
 • Filter: Minimum $${config.binance.minLiquidationUsd.toLocaleString()} USD
 • Mega Trigger: $${config.binance.megaLiquidationUsd.toLocaleString()} USD
-• Latency: Real-time (<150ms)
+• Latency: Real-time (under 150ms)
 `.trim();
       await this.sendMessage(chatId, statusText);
     } else if (text === '/plans') {
