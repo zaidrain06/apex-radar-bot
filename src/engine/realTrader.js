@@ -36,7 +36,12 @@ class RealTrader {
 
   async init() {
     try {
-      let state = await BotState.findOne({ type: 'REAL' });
+      const mongoose = require('mongoose');
+      if (mongoose.connection.readyState !== 1) {
+         console.warn('⚠️ [RealTrader] MongoDB not connected, falling back to initial stats.');
+         return;
+      }
+      let state = await BotState.findOne({ type: 'REAL' }).maxTimeMS(5000);
       if (!state) {
         state = new BotState({ type: 'REAL', totalPnl: 0, winCount: 0, lossCount: 0 });
         await state.save();
@@ -52,6 +57,8 @@ class RealTrader {
 
   async saveState() {
     try {
+      const mongoose = require('mongoose');
+      if (mongoose.connection.readyState !== 1) return;
       await BotState.updateOne(
         { type: 'REAL' },
         { totalPnl: this.totalPnl, winCount: this.winCount, lossCount: this.lossCount },

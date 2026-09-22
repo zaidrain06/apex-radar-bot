@@ -63,7 +63,7 @@ async function bootstrap() {
 
   // 4. Start WebSocket Listener
   binanceEngine.start();
-  telegram.startPolling();
+  // telegram.init() already started long polling automatically
 
   // 5. Lightweight HTTP Server (Healthcheck & Whop Webhooks)
   const server = http.createServer((req, res) => {

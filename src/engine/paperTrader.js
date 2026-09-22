@@ -16,7 +16,12 @@ class PaperTrader {
 
   async init() {
     try {
-      let state = await BotState.findOne({ type: 'PAPER' });
+      const mongoose = require('mongoose');
+      if (mongoose.connection.readyState !== 1) {
+         console.warn('⚠️ [PaperTrader] MongoDB not connected, falling back to initial stats.');
+         return;
+      }
+      let state = await BotState.findOne({ type: 'PAPER' }).maxTimeMS(5000);
       if (!state) {
         state = new BotState({ type: 'PAPER', balance: 11000, winCount: 0, lossCount: 0 });
         await state.save();
@@ -32,6 +37,8 @@ class PaperTrader {
 
   async saveState() {
     try {
+      const mongoose = require('mongoose');
+      if (mongoose.connection.readyState !== 1) return;
       await BotState.updateOne(
         { type: 'PAPER' },
         { balance: this.balance, winCount: this.winCount, lossCount: this.lossCount },
