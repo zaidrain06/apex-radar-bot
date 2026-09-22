@@ -70,6 +70,12 @@ class RealTrader {
   }
 
   async executeTrade(cascadeData) {
+    // 🚨 EMERGENCY KILL SWITCH 🚨
+    // MEXC Futures uses 'contracts' not raw coin amounts.
+    // To prevent draining funds due to massive contract sizing, real trading is temporarily suspended!
+    console.log(`[RealTrader] 🚨 ACİL DURUM: İşlem durduruldu! Borsa kontrat hesaplaması hatası tespiti.`);
+    return;
+
     if (!this.exchange) return;
 
     try {
