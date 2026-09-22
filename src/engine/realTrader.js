@@ -70,25 +70,28 @@ class RealTrader {
   }
 
   async executeTrade(cascadeData) {
-    // 🚨 EMERGENCY KILL SWITCH 🚨
-    // MEXC Futures uses 'contracts' not raw coin amounts.
-    // To prevent draining funds due to massive contract sizing, real trading is temporarily suspended!
-    console.log(`[RealTrader] 🚨 ACİL DURUM: İşlem durduruldu! Borsa kontrat hesaplaması hatası tespiti.`);
-    return;
-
     if (!this.exchange) return;
 
     try {
       const { symbol, side, avgPrice } = cascadeData;
       
       // FIX: Binance sends 'ETHUSDT'. CCXT expects 'ETH/USDT:USDT' for MEXC Futures.
-      // If we don't format it, CCXT sends it to the Spot API, which causes the 700007 permission error!
       let ccxtSymbol = symbol;
       if (symbol.endsWith('USDT')) {
         ccxtSymbol = symbol.replace('USDT', '/USDT:USDT');
       }
 
-      // Shadow bot mantığı: Long'lar patlıyorsa piyasa düşüyordur -> Biz LONG (Buy) açarız.
+      // Ensure markets are loaded to access contractSize
+      if (Object.keys(this.exchange.markets).length === 0) {
+        await this.exchange.loadMarkets();
+      }
+      const market = this.exchange.markets[ccxtSymbol];
+      if (!market) {
+        console.warn(`[RealTrader] ${ccxtSymbol} için market verisi bulunamadı!`);
+        return;
+      }
+
+      // Shadow bot mantığı
       const isLongSqueeze = side === 'SELL';
       const orderSide = isLongSqueeze ? 'buy' : 'sell';
 
@@ -97,20 +100,26 @@ class RealTrader {
       const currentPrice = ticker.last;
 
       // 50$ lık pozisyon için kaç adet coin almamız gerekiyor?
-      const amount = this.tradeAmountUsd / currentPrice;
+      const coinAmount = this.tradeAmountUsd / currentPrice;
+      
+      // MEXC Futures'da miktar KOİN değil KONTRAT olarak girilir.
+      const contractSize = market.contractSize || 1;
+      const contractsRaw = coinAmount / contractSize;
+      // Küsuratlı kontrat alınamaz (precision=1), aşağı yuvarla, minimum 1 olsun.
+      const contracts = Math.max(1, Math.floor(contractsRaw));
 
-      console.log(`[RealTrader] ⚡ İşlem Tetiklendi: ${ccxtSymbol} | Yön: ${orderSide.toUpperCase()} | Adet: ${amount}`);
+      console.log(`[RealTrader] ⚡ İşlem Tetiklendi: ${ccxtSymbol} | Yön: ${orderSide.toUpperCase()} | Coin Miktarı: ${coinAmount.toFixed(4)} | Kontrat: ${contracts}`);
 
-      // GÜVENLİK: Önce kaldıracı 10x olarak ayarla (MEXC destekliyorsa)
+      // GÜVENLİK: Önce kaldıracı 10x olarak ayarla
       try {
         await this.exchange.setMarginMode('isolated', ccxtSymbol);
         await this.exchange.setLeverage(this.leverage, ccxtSymbol);
       } catch (e) {
-        console.log(`[RealTrader] Kaldıraç ayarlanırken uyarı (Borsa otomatik yönetiyor olabilir): ${e.message}`);
+        console.log(`[RealTrader] Kaldıraç ayarlanırken uyarı: ${e.message}`);
       }
 
-      // GERÇEK EMRİ PİYASAYA GÖNDER (Market Order)
-      const order = await this.exchange.createMarketOrder(ccxtSymbol, orderSide, amount);
+      // GERÇEK EMRİ PİYASAYA GÖNDER (Kontrat sayısı ile)
+      const order = await this.exchange.createMarketOrder(ccxtSymbol, orderSide, contracts);
       
       const tradeId = `REAL_${ccxtSymbol}_${Date.now()}`;
       
