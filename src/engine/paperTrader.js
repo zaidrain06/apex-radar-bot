@@ -1,50 +1,44 @@
-// Native fetch is available in Node 18+, no need to require external node-fetch
-const fs = require('fs');
-const path = require('path');
+const BotState = require('../db/botState');
 
 class PaperTrader {
   constructor(telegramManager, adminChatId) {
     this.telegram = telegramManager;
     this.adminChatId = adminChatId;
-    this.dbPath = path.join(__dirname, '../../shadow_state.json');
-    this.leverage = 10; // 10x Leverage
-    this.tradeAmount = 1000; // $1,000 per trade
+    this.leverage = 10;
+    this.tradeAmount = 1000;
     
-    // Default stats
-    this.balance = 10000;
+    this.balance = 11000;
     this.winCount = 0;
     this.lossCount = 0;
     
-    // Load existing state if it survives deployment
-    this.loadState();
-    
-    this.activeTrades = new Map(); // Pendings are kept in RAM since 3 min wait resets on deploy anyway
+    this.activeTrades = new Map();
   }
 
-  loadState() {
+  async init() {
     try {
-      if (fs.existsSync(this.dbPath)) {
-        const raw = fs.readFileSync(this.dbPath, 'utf8');
-        const data = JSON.parse(raw);
-        this.balance = data.balance ?? 10000;
-        this.winCount = data.winCount ?? 0;
-        this.lossCount = data.lossCount ?? 0;
+      let state = await BotState.findOne({ type: 'PAPER' });
+      if (!state) {
+        state = new BotState({ type: 'PAPER', balance: 11000, winCount: 0, lossCount: 0 });
+        await state.save();
       }
+      this.balance = state.balance;
+      this.winCount = state.winCount;
+      this.lossCount = state.lossCount;
+      console.log(`✅ [PaperTrader] MongoDB State Loaded. Balance: $${this.balance}`);
     } catch (e) {
-      console.error('❌ [PaperTrader] loadState error:', e.message);
+      console.error('❌ [PaperTrader] MongoDB Init error:', e.message);
     }
   }
 
-  saveState() {
+  async saveState() {
     try {
-      const data = {
-        balance: this.balance,
-        winCount: this.winCount,
-        lossCount: this.lossCount
-      };
-      fs.writeFileSync(this.dbPath, JSON.stringify(data, null, 2));
+      await BotState.updateOne(
+        { type: 'PAPER' },
+        { balance: this.balance, winCount: this.winCount, lossCount: this.lossCount },
+        { upsert: true }
+      );
     } catch (e) {
-      console.error('❌ [PaperTrader] saveState error:', e.message);
+      console.error('❌ [PaperTrader] MongoDB Save error:', e.message);
     }
   }
 

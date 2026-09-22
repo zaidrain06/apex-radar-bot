@@ -1,6 +1,5 @@
 const ccxt = require('ccxt');
-const fs = require('fs');
-const path = require('path');
+const BotState = require('../db/botState');
 
 class RealTrader {
   constructor(telegramManager, adminChatId) {
@@ -8,18 +7,14 @@ class RealTrader {
     this.adminChatId = adminChatId;
     
     // RİSK YÖNETİMİ - 50 DOLARLIK TEST
-    this.tradeAmountUsd = 50; // Sadece 50$ büyüklüğünde pozisyon açar (10x kaldıraçta sadece 5$ teminat kullanır!)
+    this.tradeAmountUsd = 50; 
     this.leverage = 10;
-    
     this.activeTrades = new Map();
-    this.dbPath = path.join(__dirname, '../../real_state.json');
 
     // Default Stats
     this.totalPnl = 0;
     this.winCount = 0;
     this.lossCount = 0;
-
-    this.loadState();
 
     // MEXC API Bağlantısı
     const apiKey = process.env.MEXC_API_KEY;
@@ -30,9 +25,7 @@ class RealTrader {
         apiKey: apiKey,
         secret: secret,
         enableRateLimit: true,
-        options: {
-          defaultType: 'swap' // Vadeli işlemler (Futures) için swap seçilmeli
-        }
+        options: { defaultType: 'swap' }
       });
       console.log('✅ [RealTrader] MEXC API Anahtarları yüklendi. GERÇEK İŞLEM MOTORU AKTİF.');
     } else {
@@ -41,29 +34,31 @@ class RealTrader {
     }
   }
 
-  loadState() {
+  async init() {
     try {
-      if (fs.existsSync(this.dbPath)) {
-        const raw = fs.readFileSync(this.dbPath, 'utf8');
-        const data = JSON.parse(raw);
-        this.totalPnl = data.totalPnl ?? 0;
-        this.winCount = data.winCount ?? 0;
-        this.lossCount = data.lossCount ?? 0;
+      let state = await BotState.findOne({ type: 'REAL' });
+      if (!state) {
+        state = new BotState({ type: 'REAL', totalPnl: 0, winCount: 0, lossCount: 0 });
+        await state.save();
       }
+      this.totalPnl = state.totalPnl;
+      this.winCount = state.winCount;
+      this.lossCount = state.lossCount;
+      console.log(`✅ [RealTrader] MongoDB State Loaded. Total PNL: $${this.totalPnl}`);
     } catch (e) {
-      console.error('❌ [RealTrader] loadState hatası:', e.message);
+      console.error('❌ [RealTrader] MongoDB Init error:', e.message);
     }
   }
 
-  saveState() {
+  async saveState() {
     try {
-      fs.writeFileSync(this.dbPath, JSON.stringify({
-        totalPnl: this.totalPnl,
-        winCount: this.winCount,
-        lossCount: this.lossCount
-      }, null, 2));
+      await BotState.updateOne(
+        { type: 'REAL' },
+        { totalPnl: this.totalPnl, winCount: this.winCount, lossCount: this.lossCount },
+        { upsert: true }
+      );
     } catch (e) {
-      console.error('❌ [RealTrader] saveState hatası:', e.message);
+      console.error('❌ [RealTrader] MongoDB Save error:', e.message);
     }
   }
 
