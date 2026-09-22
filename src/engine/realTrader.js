@@ -74,31 +74,39 @@ class RealTrader {
 
     try {
       const { symbol, side, avgPrice } = cascadeData;
+      
+      // FIX: Binance sends 'ETHUSDT'. CCXT expects 'ETH/USDT:USDT' for MEXC Futures.
+      // If we don't format it, CCXT sends it to the Spot API, which causes the 700007 permission error!
+      let ccxtSymbol = symbol;
+      if (symbol.endsWith('USDT')) {
+        ccxtSymbol = symbol.replace('USDT', '/USDT:USDT');
+      }
+
       // Shadow bot mantığı: Long'lar patlıyorsa piyasa düşüyordur -> Biz LONG (Buy) açarız.
       const isLongSqueeze = side === 'SELL';
       const orderSide = isLongSqueeze ? 'buy' : 'sell';
 
       // Coin'in anlık fiyatını alalım
-      const ticker = await this.exchange.fetchTicker(symbol);
+      const ticker = await this.exchange.fetchTicker(ccxtSymbol);
       const currentPrice = ticker.last;
 
       // 50$ lık pozisyon için kaç adet coin almamız gerekiyor?
       const amount = this.tradeAmountUsd / currentPrice;
 
-      console.log(`[RealTrader] ⚡ İşlem Tetiklendi: ${symbol} | Yön: ${orderSide.toUpperCase()} | Adet: ${amount}`);
+      console.log(`[RealTrader] ⚡ İşlem Tetiklendi: ${ccxtSymbol} | Yön: ${orderSide.toUpperCase()} | Adet: ${amount}`);
 
       // GÜVENLİK: Önce kaldıracı 10x olarak ayarla (MEXC destekliyorsa)
       try {
-        await this.exchange.setMarginMode('isolated', symbol);
-        await this.exchange.setLeverage(this.leverage, symbol);
+        await this.exchange.setMarginMode('isolated', ccxtSymbol);
+        await this.exchange.setLeverage(this.leverage, ccxtSymbol);
       } catch (e) {
         console.log(`[RealTrader] Kaldıraç ayarlanırken uyarı (Borsa otomatik yönetiyor olabilir): ${e.message}`);
       }
 
       // GERÇEK EMRİ PİYASAYA GÖNDER (Market Order)
-      const order = await this.exchange.createMarketOrder(symbol, orderSide, amount);
+      const order = await this.exchange.createMarketOrder(ccxtSymbol, orderSide, amount);
       
-      const tradeId = `REAL_${symbol}_${Date.now()}`;
+      const tradeId = `REAL_${ccxtSymbol}_${Date.now()}`;
       
       // Stop Loss ve Take Profit seviyeleri (Basit %2 Stop, %4 Kar)
       const entryPrice = order.average || currentPrice;
@@ -115,7 +123,7 @@ class RealTrader {
       }
 
       this.activeTrades.set(tradeId, {
-        symbol,
+        symbol: ccxtSymbol,
         side: orderSide,
         entryPrice: entryPrice,
         amount: order.filled || amount,
