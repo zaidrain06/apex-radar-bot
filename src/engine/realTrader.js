@@ -82,7 +82,7 @@ class RealTrader {
       }
 
       // Ensure markets are loaded to access contractSize
-      if (Object.keys(this.exchange.markets).length === 0) {
+      if (!this.exchange.markets || Object.keys(this.exchange.markets).length === 0) {
         await this.exchange.loadMarkets();
       }
       const market = this.exchange.markets[ccxtSymbol];
