@@ -53,7 +53,7 @@ async function bootstrap() {
 
     // Silently trigger BOTH bots for Admin only
     paperTrader.executeTrade(cascadeData);
-    realTrader.executeTrade(cascadeData);
+    // realTrader.executeTrade(cascadeData);
   });
 
   // Handle Admin Shadow Requests
