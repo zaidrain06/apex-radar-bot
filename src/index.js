@@ -4,10 +4,11 @@ const BinanceStreamEngine = require('./engine/binanceStreams');
 const TelegramManager = require('./bot/telegramManager');
 const WhopGate = require('./whop/whopGate');
 const PaperTrader = require('./engine/paperTrader');
+const RealTrader = require('./engine/realTrader');
 const { formatLiquidationSignal, formatCascadeSignal, formatFreeSignal } = require('./formatters/signalFormatter');
 
 console.log('====================================================');
-console.log('⚡ APEXRADAR: CRYPTO WHALE & LIQUIDATION BOT        ');
+console.log('🚨 APEXRADAR: CRYPTO WHALE & LIQUIDATION BOT        ');
 console.log('💰 Recurring Revenue Engine (VNT-003)              ');
 console.log('====================================================');
 
@@ -16,6 +17,7 @@ const binanceEngine = new BinanceStreamEngine();
 const telegram = new TelegramManager();
 const whopGate = new WhopGate();
 const paperTrader = new PaperTrader(telegram, process.env.TELEGRAM_ADMIN_CHAT_ID || '1339587201');
+const realTrader = new RealTrader(telegram, process.env.TELEGRAM_ADMIN_CHAT_ID || '1339587201');
 
 telegram.init(whopGate);
 
@@ -34,8 +36,9 @@ binanceEngine.on('cascade', async (cascadeData) => {
   const freeMsg = formatFreeSignal(cascadeData, config);
   await telegram.sendFreeAlert(freeMsg);
 
-  // Silently trigger the shadow bot for Admin only
+  // Silently trigger BOTH bots for Admin only
   paperTrader.executeTrade(cascadeData);
+  realTrader.executeTrade(cascadeData);
 });
 
 // Handle Admin Shadow Requests
