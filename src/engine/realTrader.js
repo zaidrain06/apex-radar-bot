@@ -204,12 +204,32 @@ class RealTrader {
     if (!this.activeTrades.has(tradeId)) return;
     const trade = this.activeTrades.get(tradeId);
     
+    if (trade.isClosing) return;
+    trade.isClosing = true;
+    
     try {
       const closeSide = trade.side === 'buy' ? 'sell' : 'buy';
-      console.log(`[RealTrader] 🔒 İşlem Kapatılıyor: ${trade.symbol}`);
+      console.log(`[RealTrader] 🔨 İşlem Kapatılıyor: ${trade.symbol}`);
       
-      // Pozisyonu kapat
-      const closeOrder = await this.exchange.createMarketOrder(trade.symbol, closeSide, trade.amount);
+      let closeOrder = null;
+      let attempts = 0;
+      const maxAttempts = 15;
+      
+      while (attempts < maxAttempts && !closeOrder) {
+        try {
+          attempts++;
+          closeOrder = await this.exchange.createMarketOrder(trade.symbol, closeSide, trade.amount);
+        } catch (err) {
+          console.error(`[RealTrader] Kapatma Hatası (${attempts}/${maxAttempts}): ${trade.symbol} - ${err.message}`);
+          if (attempts >= maxAttempts) {
+            await this.telegram.sendMessage(this.adminChatId, `🚨 <b>KRİTİK HATA!</b>\n${trade.symbol} işlemi ${maxAttempts} denemeye rağmen MEXC de KAPATILAMADI! Lütfen borsadan MANUEL kapatın!`);
+            trade.isClosing = false;
+            return;
+          }
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+
       const exitPrice = closeOrder.average || (await this.exchange.fetchTicker(trade.symbol)).last;
       
       // PnL Hesapla
@@ -230,26 +250,27 @@ class RealTrader {
       this.saveState();
       this.activeTrades.delete(tradeId);
 
-      const pnlEmoji = pnlUsd >= 0 ? '✅ GERÇEK KÂR' : '❌ GERÇEK ZARAR';
+      const pnlEmoji = pnlUsd >= 0 ? '🟢 GERÇEK KÂR' : '🔴 GERÇEK ZARAR';
       
       const msg = `
 ${pnlEmoji}
-━━━━━━━━━━━━━━━━━━━━━
+=====================
 🪙 <b>${trade.symbol}</b>
-⚡ Yön: <b>${trade.side.toUpperCase()}</b>
-💲 Çıkış Fiyatı: <code>$${exitPrice.toFixed(4)}</code>
+🎯 Yön: <b>${trade.side.toUpperCase()}</b>
+💵 Çıkış Fiyatı: <code>$${exitPrice.toFixed(4)}</code>
 💵 Net PnL: <b>$${pnlUsd.toFixed(2)} USD</b>
 📈 Kâr Oranı (10x): <b>%${(leveragedPnlPercentage * 100).toFixed(2)}</b>
-🏦 Toplam Net PnL: <b>$${this.totalPnl.toFixed(2)}</b>
-━━━━━━━━━━━━━━━━━━━━━
-🛰 <i>RealTrader Engine v1</i>
+💰 Toplam Net PnL: <b>$${this.totalPnl.toFixed(2)}</b>
+=====================
+🤖 <i>RealTrader Engine v1</i>
       `.trim();
 
       await this.telegram.sendMessage(this.adminChatId, msg);
 
     } catch (error) {
-      console.error(`❌ [RealTrader] Kapatma Hatası:`, error.message);
-      await this.telegram.sendMessage(this.adminChatId, `❌ <b>RealTrader Kapatma Hatası:</b> ${trade.symbol} - ${error.message}`);
+      trade.isClosing = false;
+      console.error(`❌ [RealTrader] Kapatma Döngüsü Hatası:`, error.message);
+      await this.telegram.sendMessage(this.adminChatId, `❌ <b>RealTrader Kapatma Döngüsü Hatası:</b> ${trade.symbol} - ${error.message}`);
     }
   }
 }
