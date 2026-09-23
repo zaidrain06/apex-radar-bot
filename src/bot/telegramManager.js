@@ -94,22 +94,14 @@ ${config.whop.productUrl}
       await this.sendMessage(chatId, welcome);
     } else if (text.startsWith('/auth ')) {
       const email = text.replace('/auth ', '').trim().toLowerCase();
-      // WhopGate DB'sinden bu emaile sahip aktif kullanıcıyı bulalım
-      const db = whopGate.db.members;
-      let foundMember = null;
-      for (const key in db) {
-        if (db[key].email.toLowerCase() === email && db[key].status === 'active') {
-          foundMember = db[key];
-          break;
-        }
-      }
+
+      // MongoDB üzerinden email ile üyeyi bul ve Telegram ID'sini kaydet
+      const foundMember = await whopGate.linkTelegramByEmail(email, userId);
 
       if (foundMember) {
-        foundMember.telegramId = userId; // ID Eşleştirildi!
-        whopGate.saveDb();
-        await this.sendMessage(chatId, `✅ *Başarılı!* Whop hesabın eşleştirildi.\n\nVIP Kanala Katıl: ${config.telegram.inviteLink}`);
+        await this.sendMessage(chatId, `✅ <b>Başarılı!</b> Whop hesabın eşleştirildi.\n\nVIP Kanala Katıl: ${config.telegram.inviteLink}`);
       } else {
-        await this.sendMessage(chatId, `❌ *Hata:* '${email}' adresine ait aktif bir VIP aboneliği bulunamadı. Lütfen Whop üzerinden satın aldığınız emaili doğru girdiğinizden emin olun.`);
+        await this.sendMessage(chatId, `❌ <b>Hata:</b> '${email}' adresine ait aktif bir VIP aboneliği bulunamadı. Lütfen Whop üzerinden satın aldığınız emaili doğru girdiğinizden emin olun.`);
       }
 
     } else if (text === '/debug') {

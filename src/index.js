@@ -129,7 +129,7 @@ async function bootstrap() {
 
         try {
           const event = JSON.parse(body);
-          const result = whopGate.handleEvent(event);
+          const result = await whopGate.handleEvent(event);
           
           if (result.status === 'revoked_kick' && result.telegramId) {
              await telegram.kickMember(result.telegramId);

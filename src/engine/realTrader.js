@@ -145,7 +145,8 @@ class RealTrader {
         slPrice,
         tpPrice,
         orderId: order.id,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        monitorInterval: null
       });
 
       // Telegrama gerçek işleme girildiğini bildir
@@ -164,7 +165,12 @@ class RealTrader {
       await this.telegram.sendMessage(this.adminChatId, msg);
 
       // Bot 3 dakika sonra açık işlemi ne olursa olsun kapatacak (Acil Çıkış Koruması)
-      setTimeout(() => this.closeTrade(tradeId), 3 * 60 * 1000);
+      // Klima da kapatılıyor (clearInterval)
+      setTimeout(() => {
+        const t = this.activeTrades.get(tradeId);
+        if (t && t.monitorInterval) clearInterval(t.monitorInterval);
+        this.closeTrade(tradeId);
+      }, 3 * 60 * 1000);
 
       // Fiyat Takip Döngüsü (SL / TP Vurma Kontrolü)
       const monitorInterval = setInterval(async () => {
@@ -193,6 +199,10 @@ class RealTrader {
           // geçici API hatası olabilir, yoksay
         }
       }, 5000); // Her 5 saniyede bir kontrol
+
+      // Klima referansını kaydet
+      const tradeRef = this.activeTrades.get(tradeId);
+      if (tradeRef) tradeRef.monitorInterval = monitorInterval;
 
     } catch (error) {
       console.error(`❌ [RealTrader] Emir gönderilirken HATA:`, error.message);
