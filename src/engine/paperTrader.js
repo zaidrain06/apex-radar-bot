@@ -89,44 +89,72 @@ ${pnlEmoji} *Net PnL:* \`$${netProfit.toFixed(2)}\`
   async executeTrade(cascadeData) {
     if (!this.adminChatId) return;
 
-    // GERÇEKÇİ BAKİYE KONTROLÜ
+    const symbol = cascadeData.symbol;
+    const cleanSymbol = symbol.replace('USDT', '');
+
+    // ──────────────────────────────────────────────────────
+    // 1. GEÇERLİ COİN KONTROLÜ
+    // Binance Futures'ta yoksa hiç girme (TAKEUSDT vs.)
+    // ──────────────────────────────────────────────────────
+    try {
+      const checkRes = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${symbol}`);
+      const checkData = await checkRes.json();
+      if (!checkData.price || isNaN(parseFloat(checkData.price))) {
+        console.log(`[PaperTrader] ⛔ ${symbol} Binance Futures'ta yok, sinyal reddedildi.`);
+        return;
+      }
+    } catch (e) {
+      console.log(`[PaperTrader] ⛔ ${symbol} doğrulanamadı, sinyal reddedildi.`);
+      return;
+    }
+
+    // ──────────────────────────────────────────────────────
+    // 2. GERÇEKÇİ BAKİYE KONTROLÜ
+    // ──────────────────────────────────────────────────────
     const marginNeeded = this.tradeAmountUsd / this.leverage;
     const usedMargin = this.activeTrades.size * marginNeeded;
     const availableBalance = this.balance - usedMargin;
 
     if (availableBalance < marginNeeded) {
-      console.log(`[PaperTrader] 🛑 YETERSİZ BAKİYE SİMÜLASYONU: ${cascadeData.symbol} işlemi reddedildi.`);
-      return; // İşleme girme!
+      console.log(`[PaperTrader] 🛑 YETERSİZ BAKİYE: ${symbol} reddedildi.`);
+      return;
     }
 
     const tradeType = cascadeData.side === 'SELL' ? 'buy' : 'sell';
-    const entryPrice = cascadeData.avgPrice;
-    const symbol = cascadeData.symbol;
-    const cleanSymbol = symbol.replace('USDT', '');
+
+    // ──────────────────────────────────────────────────────
+    // 3. SLIPPAGE SİMÜLASYONU (%0.15 giriş kayması)
+    // Cascade anında piyasa zaten uçuşta, fiyat kayar.
+    // ──────────────────────────────────────────────────────
+    const slippageRate = 0.0015; // %0.15
+    const rawEntryPrice = cascadeData.avgPrice;
+    // Buy'da slippage biraz daha yüksekten alır, sell'de biraz daha düşükten satar
+    const entryPrice = tradeType === 'buy'
+      ? rawEntryPrice * (1 + slippageRate)
+      : rawEntryPrice * (1 - slippageRate);
+
     const tradeId = Date.now().toString() + Math.floor(Math.random() * 1000).toString();
 
-    // SL ve TP Hesaplama
+    // SL ve TP Hesaplama (slippage'lı giriş fiyatından)
     const stopLossRatio = 0.02;
     const takeProfitRatio = 0.04;
-    let slPrice, tpPrice;
-    
-    if (tradeType === 'buy') {
-      slPrice = entryPrice * (1 - stopLossRatio);
-      tpPrice = entryPrice * (1 + takeProfitRatio);
-    } else {
-      slPrice = entryPrice * (1 + stopLossRatio);
-      tpPrice = entryPrice * (1 - takeProfitRatio);
-    }
+    const slPrice = tradeType === 'buy'
+      ? entryPrice * (1 - stopLossRatio)
+      : entryPrice * (1 + stopLossRatio);
+    const tpPrice = tradeType === 'buy'
+      ? entryPrice * (1 + takeProfitRatio)
+      : entryPrice * (1 - takeProfitRatio);
 
     // Aktif işleme kaydet
     this.activeTrades.set(tradeId, {
-      symbol: symbol, // raw binance symbol for fetching price
+      symbol: symbol,
       cleanSymbol: cleanSymbol,
       type: tradeType,
       entryPrice: entryPrice,
       slPrice: slPrice,
       tpPrice: tpPrice,
-      startTime: Date.now()
+      startTime: Date.now(),
+      monitorInterval: null
     });
 
     const entryMsg = `
@@ -134,13 +162,16 @@ ${pnlEmoji} *Net PnL:* \`$${netProfit.toFixed(2)}\`
 🪙 Asset: #${cleanSymbol}
 🎯 Action: *${tradeType.toUpperCase()} (10x Lev)*
 💰 Size: *$${this.tradeAmountUsd}* (Margin: $${marginNeeded})
-💵 Entry Price: \`$${entryPrice.toFixed(4)}\`
+💵 Cascade Fiyatı: \`$${rawEntryPrice.toFixed(4)}\`
+💵 Giriş (Slippage +%0.15): \`$${entryPrice.toFixed(4)}\`
 🛑 SL: \`$${slPrice.toFixed(4)}\` | 🟢 TP: \`$${tpPrice.toFixed(4)}\`
     `.trim();
     
     await this.telegram.sendMessage(this.adminChatId, entryMsg);
 
-    // Kapatma Fonksiyonu
+    // ──────────────────────────────────────────────────────
+    // KAPATMA FONKSİYONU (ortak kullanım)
+    // ──────────────────────────────────────────────────────
     const closeTrade = async (reason, exitPrice) => {
       if (!this.activeTrades.has(tradeId)) return;
       
@@ -151,17 +182,11 @@ ${pnlEmoji} *Net PnL:* \`$${netProfit.toFixed(2)}\`
         pnlPercentage = (entryPrice - exitPrice) / entryPrice;
       }
 
-      // Brüt Kâr/Zarar
       const grossPnl = pnlPercentage * this.leverage * marginNeeded;
-      
-      // Komisyon Kesintisi (Giriş + Çıkış)
-      const fee = (this.tradeAmountUsd * this.feeRate) * 2;
-      
-      // Net Kâr/Zarar
+      const fee = (this.tradeAmountUsd * this.feeRate) * 2; // Giriş + Çıkış komisyonu
       const netPnl = grossPnl - fee;
 
       this.balance += netPnl;
-      
       if (netPnl > 0) this.winCount++;
       else this.lossCount++;
 
@@ -173,39 +198,41 @@ ${pnlEmoji} *Net PnL:* \`$${netProfit.toFixed(2)}\`
 👻 *SHADOW BOT RESULT (${reason})*
 🪙 Asset: #${cleanSymbol}
 🎯 Type: *${tradeType.toUpperCase()}*
-💵 Entry: \`$${entryPrice.toFixed(4)}\`
-💵 Exit: \`$${exitPrice.toFixed(4)}\`
-
-💸 Fees Paid: \`-$${fee.toFixed(2)}\`
+💵 Entry: \`$${entryPrice.toFixed(4)}\` | Exit: \`$${exitPrice.toFixed(4)}\`
+💸 Komisyon: \`-$${fee.toFixed(2)}\`
 ${pnlEmoji}: *$${netPnl.toFixed(2)}*
-💰 Total Fake Balance: *$${this.balance.toFixed(2)}*
+💰 Shadow Bakiye: *$${this.balance.toFixed(2)}*
       `.trim();
 
       await this.telegram.sendMessage(this.adminChatId, closeMsg);
     };
 
-    // 1. Acil Çıkış (3 Dakika Süre Sınırı)
+    // ──────────────────────────────────────────────────────
+    // 3 DAKİKA TIMEOUT (SL/TP vurmadıysa anlık fiyattan kapat)
+    // ──────────────────────────────────────────────────────
     const timeoutId = setTimeout(async () => {
       if (!this.activeTrades.has(tradeId)) return;
+      const t = this.activeTrades.get(tradeId);
+      if (t && t.monitorInterval) clearInterval(t.monitorInterval);
       try {
         const res = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${symbol}`);
         const data = await res.json();
         const exitPx = parseFloat(data.price);
-        
         if (!isNaN(exitPx)) {
-          await closeTrade('TIME LIMIT 3M', exitPx);
+          // SL/TP vurmadı, 3 dakika doldu. Anlık fiyattan kapat → PnL hesapla
+          await closeTrade('3M SÜRE DOLDU', exitPx);
         } else {
-          // Fiyat gelmezse marjini boşaltmak için işlemi zorla sil
-          console.error(`[PaperTrader] ${symbol} için 3. dakika kapanış fiyatı alınamadı (NaN). İşlem siliniyor.`);
+          // Geçersiz coin (zaten başta kontrol ettik ama ek güvenlik)
           this.activeTrades.delete(tradeId);
         }
       } catch(e) {
-        console.error(`[PaperTrader] ${symbol} zaman aşımı API hatası:`, e.message);
-        this.activeTrades.delete(tradeId); // Hata olursa da sil, bakiye bloke kalmasın
+        this.activeTrades.delete(tradeId);
       }
     }, 3 * 60 * 1000);
 
-    // 2. Fiyat Radarı (5 Saniyede Bir SL/TP Kontrolü)
+    // ──────────────────────────────────────────────────────
+    // 5 SANİYEDE BİR SL/TP RADAR
+    // ──────────────────────────────────────────────────────
     const monitorInterval = setInterval(async () => {
       if (!this.activeTrades.has(tradeId)) {
         clearInterval(monitorInterval);
@@ -231,6 +258,10 @@ ${pnlEmoji}: *$${netPnl.toFixed(2)}*
         }
       } catch(e) {}
     }, 5000);
+
+    // Klima referansını kaydet
+    const paperTradeRef = this.activeTrades.get(tradeId);
+    if (paperTradeRef) paperTradeRef.monitorInterval = monitorInterval;
 
   }
 }
