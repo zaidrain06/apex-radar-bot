@@ -91,26 +91,24 @@ class RealTrader {
         return;
       }
 
-      // Shadow bot mantığı
+      // Cascade bounce mantığı: Longs eridiyse fiyat düştü → toparlanma için BUY
       const isLongSqueeze = side === 'SELL';
       const orderSide = isLongSqueeze ? 'buy' : 'sell';
+      const closeSide = orderSide === 'buy' ? 'sell' : 'buy';
 
       // Coin'in anlık fiyatını alalım
       const ticker = await this.exchange.fetchTicker(ccxtSymbol);
       const currentPrice = ticker.last;
 
-      // 50$ lık pozisyon için kaç adet coin almamız gerekiyor?
+      // 50$ lık pozisyon için kaç kontrat lazım?
       const coinAmount = this.tradeAmountUsd / currentPrice;
-      
-      // MEXC Futures'da miktar KOİN değil KONTRAT olarak girilir.
       const contractSize = market.contractSize || 1;
       const contractsRaw = coinAmount / contractSize;
-      // Küsuratlı kontrat alınamaz (precision=1), aşağı yuvarla, minimum 1 olsun.
       const contracts = Math.max(1, Math.floor(contractsRaw));
 
-      console.log(`[RealTrader] ⚡ İşlem Tetiklendi: ${ccxtSymbol} | Yön: ${orderSide.toUpperCase()} | Coin Miktarı: ${coinAmount.toFixed(4)} | Kontrat: ${contracts}`);
+      console.log(`[RealTrader] ⚡ İşlem Tetiklendi: ${ccxtSymbol} | Yön: ${orderSide.toUpperCase()} | Kontrat: ${contracts}`);
 
-      // GÜVENLİK: Önce kaldıracı 10x olarak ayarla
+      // GÜVENLİK: Önce kaldıracı ve marjin modunu ayarla
       try {
         await this.exchange.setMarginMode('isolated', ccxtSymbol);
         await this.exchange.setLeverage(this.leverage, ccxtSymbol);
@@ -118,25 +116,69 @@ class RealTrader {
         console.log(`[RealTrader] Kaldıraç ayarlanırken uyarı: ${e.message}`);
       }
 
-      // GERÇEK EMRİ PİYASAYA GÖNDER (Kontrat sayısı ile)
+      // GERÇEK EMRİ PİYASAYA GÖNDER
       const order = await this.exchange.createMarketOrder(ccxtSymbol, orderSide, contracts);
-      
       const tradeId = `REAL_${ccxtSymbol}_${Date.now()}`;
-      
-      // Stop Loss ve Take Profit seviyeleri (Basit %2 Stop, %4 Kar)
       const entryPrice = order.average || currentPrice;
-      const stopLossRatio = 0.02; // %2 zarar
-      const takeProfitRatio = 0.04; // %4 kâr
-      
-      let slPrice, tpPrice;
-      if (orderSide === 'buy') {
-        slPrice = entryPrice * (1 - stopLossRatio);
-        tpPrice = entryPrice * (1 + takeProfitRatio);
-      } else {
-        slPrice = entryPrice * (1 + stopLossRatio);
-        tpPrice = entryPrice * (1 - takeProfitRatio);
+
+      // SL/TP Fiyatlarını Hesapla
+      const slRatio = 0.02; // %2 zarar
+      const tpRatio = 0.04; // %4 kâr
+      const slPrice = orderSide === 'buy'
+        ? entryPrice * (1 - slRatio)
+        : entryPrice * (1 + slRatio);
+      const tpPrice = orderSide === 'buy'
+        ? entryPrice * (1 + tpRatio)
+        : entryPrice * (1 - tpRatio);
+
+      // =====================================================
+      // 🛡️ NATIVE SL/TP: MEXC'E BORSADA KAYDEDİYORUZ
+      // MARK PRICE kullanır → İğne (wick) geçirmez!
+      // Render çökse bile MEXC pozisyonu kendi kapatır.
+      // =====================================================
+      let slOrderId = null;
+      let tpOrderId = null;
+      let nativeSLTPActive = false;
+
+      try {
+        // Native Stop Loss (MARK_PRICE ile - wick korumalı)
+        const slOrder = await this.exchange.createOrder(
+          ccxtSymbol,
+          'STOP_MARKET',
+          closeSide,
+          contracts,
+          undefined,
+          {
+            stopPrice: parseFloat(slPrice.toFixed(market.precision?.price || 4)),
+            reduceOnly: true,
+            workingType: 'MARK_PRICE'
+          }
+        );
+        slOrderId = slOrder.id;
+        console.log(`[RealTrader] 🛡️ Native SL yerleştirildi: $${slPrice.toFixed(4)} (Mark Price)`);
+
+        // Native Take Profit (MARK_PRICE ile - wick korumalı)
+        const tpOrder = await this.exchange.createOrder(
+          ccxtSymbol,
+          'TAKE_PROFIT_MARKET',
+          closeSide,
+          contracts,
+          undefined,
+          {
+            stopPrice: parseFloat(tpPrice.toFixed(market.precision?.price || 4)),
+            reduceOnly: true,
+            workingType: 'MARK_PRICE'
+          }
+        );
+        tpOrderId = tpOrder.id;
+        console.log(`[RealTrader] 🛡️ Native TP yerleştirildi: $${tpPrice.toFixed(4)} (Mark Price)`);
+        nativeSLTPActive = true;
+      } catch (e) {
+        console.warn(`[RealTrader] ⚠️ Native SL/TP yerleştirilemedi (fallback fiyat polling'e): ${e.message}`);
+        nativeSLTPActive = false;
       }
 
+      // Trade nesnesini kaydet
       this.activeTrades.set(tradeId, {
         symbol: ccxtSymbol,
         side: orderSide,
@@ -144,12 +186,19 @@ class RealTrader {
         amount: order.filled || contracts,
         slPrice,
         tpPrice,
+        slOrderId,
+        tpOrderId,
+        nativeSLTPActive,
         orderId: order.id,
         timestamp: Date.now(),
-        monitorInterval: null
+        monitorInterval: null,
+        isClosing: false
       });
 
-      // Telegrama gerçek işleme girildiğini bildir
+      // Telegram Bildirimi
+      const nativeTag = nativeSLTPActive
+        ? '\n🛡️ <b>Native SL/TP AKTİF</b> (Mark Price, Wick Korumalı)'
+        : '\n⚠️ <b>Fallback Polling Modu</b> (Native SL/TP başarısız)';
       const msg = `
 🟢 <b>GERÇEK İŞLEM AÇILDI (TEST)</b> 🟢
 =====================
@@ -157,22 +206,18 @@ class RealTrader {
 🎯 Yön: <b>${orderSide.toUpperCase()}</b>
 💰 Büyüklük: <b>$${this.tradeAmountUsd} USD</b> (Teminat: ~$5)
 💵 Giriş Fiyatı: <code>$${entryPrice.toFixed(4)}</code>
-🛑 SL: <code>$${slPrice.toFixed(4)}</code> | 🟢 TP: <code>$${tpPrice.toFixed(4)}</code>
+🛑 SL: <code>$${slPrice.toFixed(4)}</code> | 🟢 TP: <code>$${tpPrice.toFixed(4)}</code>${nativeTag}
 =====================
-🤖 <i>RealTrader Engine v1</i>
+🤖 <i>RealTrader Engine v2</i>
       `.trim();
 
       await this.telegram.sendMessage(this.adminChatId, msg);
 
-      // Bot 3 dakika sonra açık işlemi ne olursa olsun kapatacak (Acil Çıkış Koruması)
-      // Klima da kapatılıyor (clearInterval)
-      setTimeout(() => {
-        const t = this.activeTrades.get(tradeId);
-        if (t && t.monitorInterval) clearInterval(t.monitorInterval);
-        this.closeTrade(tradeId);
-      }, 3 * 60 * 1000);
-
-      // Fiyat Takip Döngüsü (SL / TP Vurma Kontrolü)
+      // =====================================================
+      // POZİSYON TAKİP DÖNGÜSÜ
+      // Native SL/TP aktifse: MEXC'teki pozisyonu izle
+      // Fallback modundaysa: Fiyatı izle (eski yöntem)
+      // =====================================================
       const monitorInterval = setInterval(async () => {
         if (!this.activeTrades.has(tradeId)) {
           clearInterval(monitorInterval);
@@ -180,29 +225,52 @@ class RealTrader {
         }
         try {
           const trade = this.activeTrades.get(tradeId);
-          const ticker = await this.exchange.fetchTicker(trade.symbol);
-          const currentPx = ticker.last;
 
-          let hitLimit = false;
-          if (trade.side === 'buy') {
-            if (currentPx >= trade.tpPrice || currentPx <= trade.slPrice) hitLimit = true;
+          if (trade.nativeSLTPActive) {
+            // Native mod: MEXC'teki pozisyonu kontrol et
+            const positions = await this.exchange.fetchPositions([trade.symbol]);
+            const openPos = positions.find(p =>
+              p.symbol === trade.symbol && Math.abs(p.contracts || 0) > 0
+            );
+            if (!openPos) {
+              // Pozisyon MEXC tarafından kapatıldı (SL veya TP vurdu)
+              console.log(`[RealTrader] ✅ Pozisyon MEXC tarafından kapatıldı: ${trade.symbol}`);
+              clearInterval(monitorInterval);
+              await this.handleNativeClose(tradeId);
+            }
           } else {
-            if (currentPx <= trade.tpPrice || currentPx >= trade.slPrice) hitLimit = true;
-          }
-
-          if (hitLimit) {
-            console.log(`[RealTrader] 🛑 SL/TP LIMIT TETIKLENDI: ${trade.symbol} at ${currentPx}`);
-            clearInterval(monitorInterval);
-            this.closeTrade(tradeId);
+            // Fallback mod: Fiyatı izle (wick'e açık ama native çalışmadı)
+            const ticker = await this.exchange.fetchTicker(trade.symbol);
+            const currentPx = ticker.last;
+            let hitLimit = false;
+            if (trade.side === 'buy') {
+              if (currentPx >= trade.tpPrice || currentPx <= trade.slPrice) hitLimit = true;
+            } else {
+              if (currentPx <= trade.tpPrice || currentPx >= trade.slPrice) hitLimit = true;
+            }
+            if (hitLimit) {
+              console.log(`[RealTrader] 🛑 SL/TP (Fallback) Tetiklendi: ${trade.symbol} at ${currentPx}`);
+              clearInterval(monitorInterval);
+              this.closeTrade(tradeId);
+            }
           }
         } catch (e) {
-          // geçici API hatası olabilir, yoksay
+          // Geçici API hatası, devam et
         }
-      }, 5000); // Her 5 saniyede bir kontrol
+      }, 5000);
 
       // Klima referansını kaydet
       const tradeRef = this.activeTrades.get(tradeId);
       if (tradeRef) tradeRef.monitorInterval = monitorInterval;
+
+      // 5 Dakika Maksimum Süre (Native SL/TP için 3 yerine 5dk - MEXC'in zaman alması için)
+      setTimeout(() => {
+        const t = this.activeTrades.get(tradeId);
+        if (!t) return;
+        if (t.monitorInterval) clearInterval(t.monitorInterval);
+        console.log(`[RealTrader] ⏰ Maksimum süre doldu: ${ccxtSymbol} kapatılıyor...`);
+        this.closeTrade(tradeId);
+      }, 5 * 60 * 1000);
 
     } catch (error) {
       console.error(`❌ [RealTrader] Emir gönderilirken HATA:`, error.message);
@@ -210,38 +278,40 @@ class RealTrader {
     }
   }
 
-  async closeTrade(tradeId) {
+  // Native SL/TP tarafından kapatılan pozisyonları işle
+  async handleNativeClose(tradeId) {
     if (!this.activeTrades.has(tradeId)) return;
     const trade = this.activeTrades.get(tradeId);
-    
     if (trade.isClosing) return;
     trade.isClosing = true;
-    
+
     try {
-      const closeSide = trade.side === 'buy' ? 'sell' : 'buy';
-      console.log(`[RealTrader] 🔨 İşlem Kapatılıyor: ${trade.symbol}`);
-      
-      let closeOrder = null;
-      let attempts = 0;
-      const maxAttempts = 15;
-      
-      while (attempts < maxAttempts && !closeOrder) {
-        try {
-          attempts++;
-          closeOrder = await this.exchange.createMarketOrder(trade.symbol, closeSide, trade.amount);
-        } catch (err) {
-          console.error(`[RealTrader] Kapatma Hatası (${attempts}/${maxAttempts}): ${trade.symbol} - ${err.message}`);
-          if (attempts >= maxAttempts) {
-            await this.telegram.sendMessage(this.adminChatId, `🚨 <b>KRİTİK HATA!</b>\n${trade.symbol} işlemi ${maxAttempts} denemeye rağmen MEXC de KAPATILAMADI! Lütfen borsadan MANUEL kapatın!`);
-            trade.isClosing = false;
-            return;
+      // Kalan SL veya TP emirlerini iptal et (sadece biri tetiklendi)
+      for (const orderId of [trade.slOrderId, trade.tpOrderId]) {
+        if (orderId) {
+          try {
+            await this.exchange.cancelOrder(orderId, trade.symbol);
+          } catch (e) {
+            // Zaten dolmuş olabilir, yoksay
           }
-          await new Promise(resolve => setTimeout(resolve, 2000));
         }
       }
 
-      const exitPrice = closeOrder.average || (await this.exchange.fetchTicker(trade.symbol)).last;
-      
+      // Son işlemlerden çıkış fiyatını bul
+      let exitPrice = trade.entryPrice; // fallback
+      try {
+        const myTrades = await this.exchange.fetchMyTrades(trade.symbol, trade.timestamp - 1000, 10);
+        const closingTrades = myTrades.filter(t =>
+          t.side === (trade.side === 'buy' ? 'sell' : 'buy') &&
+          t.timestamp > trade.timestamp
+        );
+        if (closingTrades.length > 0) {
+          exitPrice = closingTrades[closingTrades.length - 1].price;
+        }
+      } catch (e) {
+        console.warn(`[RealTrader] Çıkış fiyatı alınamadı, giriş fiyatı kullanılıyor.`);
+      }
+
       // PnL Hesapla
       let pnlPercentage = 0;
       if (trade.side === 'buy') {
@@ -249,9 +319,8 @@ class RealTrader {
       } else {
         pnlPercentage = (trade.entryPrice - exitPrice) / trade.entryPrice;
       }
-
       const leveragedPnlPercentage = pnlPercentage * this.leverage;
-      const pnlUsd = (this.tradeAmountUsd / this.leverage) * leveragedPnlPercentage; // Sadece teminat üzerinden kâr/zarar
+      const pnlUsd = (this.tradeAmountUsd / this.leverage) * leveragedPnlPercentage;
 
       this.totalPnl += pnlUsd;
       if (pnlUsd > 0) this.winCount++;
@@ -261,9 +330,85 @@ class RealTrader {
       this.activeTrades.delete(tradeId);
 
       const pnlEmoji = pnlUsd >= 0 ? '🟢 GERÇEK KÂR' : '🔴 GERÇEK ZARAR';
-      
       const msg = `
-${pnlEmoji}
+${pnlEmoji} (MEXC Native SL/TP)
+=====================
+🪙 <b>${trade.symbol}</b>
+🎯 Yön: <b>${trade.side.toUpperCase()}</b>
+💵 Çıkış Fiyatı: <code>$${exitPrice.toFixed(4)}</code>
+💵 Net PnL: <b>$${pnlUsd.toFixed(2)} USD</b>
+📈 Kâr Oranı (10x): <b>%${(leveragedPnlPercentage * 100).toFixed(2)}</b>
+💰 Toplam Net PnL: <b>$${this.totalPnl.toFixed(2)}</b>
+🛡️ <i>Wick korumalı Mark Price ile kapatıldı</i>
+=====================
+🤖 <i>RealTrader Engine v2</i>
+      `.trim();
+
+      await this.telegram.sendMessage(this.adminChatId, msg);
+    } catch (error) {
+      trade.isClosing = false;
+      console.error(`❌ [RealTrader] handleNativeClose Hatası:`, error.message);
+    }
+  }
+
+  // Manuel/Timeout kapatma (fallback veya 5dk süresi dolunca)
+  async closeTrade(tradeId) {
+    if (!this.activeTrades.has(tradeId)) return;
+    const trade = this.activeTrades.get(tradeId);
+    if (trade.isClosing) return;
+    trade.isClosing = true;
+
+    // Önce native emirleri iptal et
+    for (const orderId of [trade.slOrderId, trade.tpOrderId]) {
+      if (orderId) {
+        try { await this.exchange.cancelOrder(orderId, trade.symbol); } catch (e) {}
+      }
+    }
+
+    try {
+      const closeSide = trade.side === 'buy' ? 'sell' : 'buy';
+      console.log(`[RealTrader] 🔨 İşlem Kapatılıyor (Manuel/Timeout): ${trade.symbol}`);
+
+      let closeOrder = null;
+      let attempts = 0;
+      const maxAttempts = 15;
+
+      while (attempts < maxAttempts && !closeOrder) {
+        try {
+          attempts++;
+          closeOrder = await this.exchange.createMarketOrder(trade.symbol, closeSide, trade.amount);
+        } catch (err) {
+          console.error(`[RealTrader] Kapatma Hatası (${attempts}/${maxAttempts}): ${trade.symbol} - ${err.message}`);
+          if (attempts >= maxAttempts) {
+            await this.telegram.sendMessage(this.adminChatId, `🚨 <b>KRİTİK HATA!</b>\n${trade.symbol} işlemi ${maxAttempts} denemeye rağmen KAPATILAMADI! Lütfen MEXC'ten MANUEL kapatın!`);
+            trade.isClosing = false;
+            return;
+          }
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+
+      const exitPrice = closeOrder.average || (await this.exchange.fetchTicker(trade.symbol)).last;
+
+      let pnlPercentage = 0;
+      if (trade.side === 'buy') {
+        pnlPercentage = (exitPrice - trade.entryPrice) / trade.entryPrice;
+      } else {
+        pnlPercentage = (trade.entryPrice - exitPrice) / trade.entryPrice;
+      }
+      const leveragedPnlPercentage = pnlPercentage * this.leverage;
+      const pnlUsd = (this.tradeAmountUsd / this.leverage) * leveragedPnlPercentage;
+
+      this.totalPnl += pnlUsd;
+      if (pnlUsd > 0) this.winCount++;
+      else this.lossCount++;
+
+      this.saveState();
+      this.activeTrades.delete(tradeId);
+
+      const pnlEmoji = pnlUsd >= 0 ? '🟢 GERÇEK KÂR' : '🔴 GERÇEK ZARAR';
+      const msg = `
+${pnlEmoji} (Manuel/Timeout Kapatma)
 =====================
 🪙 <b>${trade.symbol}</b>
 🎯 Yön: <b>${trade.side.toUpperCase()}</b>
@@ -272,7 +417,7 @@ ${pnlEmoji}
 📈 Kâr Oranı (10x): <b>%${(leveragedPnlPercentage * 100).toFixed(2)}</b>
 💰 Toplam Net PnL: <b>$${this.totalPnl.toFixed(2)}</b>
 =====================
-🤖 <i>RealTrader Engine v1</i>
+🤖 <i>RealTrader Engine v2</i>
       `.trim();
 
       await this.telegram.sendMessage(this.adminChatId, msg);
@@ -280,7 +425,7 @@ ${pnlEmoji}
     } catch (error) {
       trade.isClosing = false;
       console.error(`❌ [RealTrader] Kapatma Döngüsü Hatası:`, error.message);
-      await this.telegram.sendMessage(this.adminChatId, `❌ <b>RealTrader Kapatma Döngüsü Hatası:</b> ${trade.symbol} - ${error.message}`);
+      await this.telegram.sendMessage(this.adminChatId, `❌ <b>RealTrader Kapatma Hatası:</b> ${trade.symbol} - ${error.message}`);
     }
   }
 }
