@@ -5,8 +5,8 @@ class PaperTrader {
     this.telegram = telegramManager;
     this.adminChatId = adminChatId;
     
-    // GERÇEKÇİ SİMÜLASYON AYARLARI (RealTrader ile Birebir Aynı)
-    this.tradeAmountUsd = 50; // Notional işlem hacmi
+    // GERÇEKÇİ SİMÜLASYON AYARLARI (Altın Oran Hedefi)
+    this.tradeAmountUsd = 2000; // Notional işlem hacmi (Aylık 3400$ hedefini simüle edecek)
     this.leverage = 10;
     this.feeRate = 0.0008; // %0.08 taker fee
     
