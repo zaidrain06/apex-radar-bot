@@ -195,61 +195,9 @@ class RealTrader {
       }, 5000); // Her 5 saniyede bir kontrol
 
     } catch (error) {
-      console.error(`❌ [RealTrader] Emir gönderilirken HATA:`, error.message);
-      await this.telegram.sendMessage(this.adminChatId, `❌ <b>RealTrader Hata:</b> ${error.message}`);
-    }
-  }
-
-  async closeTrade(tradeId) {
-    if (!this.activeTrades.has(tradeId)) return;
-    const trade = this.activeTrades.get(tradeId);
-    
-    try {
-      const closeSide = trade.side === 'buy' ? 'sell' : 'buy';
-      console.log(`[RealTrader] 🔒 İşlem Kapatılıyor: ${trade.symbol}`);
-      
-      // Pozisyonu kapat
-      const closeOrder = await this.exchange.createMarketOrder(trade.symbol, closeSide, trade.amount);
-      const exitPrice = closeOrder.average || (await this.exchange.fetchTicker(trade.symbol)).last;
-      
-      // PnL Hesapla
-      let pnlPercentage = 0;
-      if (trade.side === 'buy') {
-        pnlPercentage = (exitPrice - trade.entryPrice) / trade.entryPrice;
-      } else {
-        pnlPercentage = (trade.entryPrice - exitPrice) / trade.entryPrice;
-      }
-
-      const leveragedPnlPercentage = pnlPercentage * this.leverage;
-      const pnlUsd = (this.tradeAmountUsd / this.leverage) * leveragedPnlPercentage; // Sadece teminat üzerinden kâr/zarar
-
-      this.totalPnl += pnlUsd;
-      if (pnlUsd > 0) this.winCount++;
-      else this.lossCount++;
-
-      this.saveState();
-      this.activeTrades.delete(tradeId);
-
-      const pnlEmoji = pnlUsd >= 0 ? '✅ GERÇEK KÂR' : '❌ GERÇEK ZARAR';
-      
-      const msg = `
-${pnlEmoji}
-━━━━━━━━━━━━━━━━━━━━━
-🪙 <b>${trade.symbol}</b>
-⚡ Yön: <b>${trade.side.toUpperCase()}</b>
-💲 Çıkış Fiyatı: <code>$${exitPrice.toFixed(4)}</code>
-💵 Net PnL: <b>$${pnlUsd.toFixed(2)} USD</b>
-📈 Kâr Oranı (10x): <b>%${(leveragedPnlPercentage * 100).toFixed(2)}</b>
-🏦 Toplam Net PnL: <b>$${this.totalPnl.toFixed(2)}</b>
-━━━━━━━━━━━━━━━━━━━━━
-🛰 <i>RealTrader Engine v1</i>
-      `.trim();
-
-      await this.telegram.sendMessage(this.adminChatId, msg);
-
-    } catch (error) {
-      console.error(`❌ [RealTrader] Kapatma Hatası:`, error.message);
-      await this.telegram.sendMessage(this.adminChatId, `❌ <b>RealTrader Kapatma Hatası:</b> ${trade.symbol} - ${error.message}`);
+      trade.isClosing = false;
+      console.error(`❌ [RealTrader] Kapatma Döngüsü Hatası:`, error.message);
+      await this.telegram.sendMessage(this.adminChatId, `❌ <b>RealTrader Kapatma Döngüsü Hatası:</b> ${trade.symbol} - ${error.message}`);
     }
   }
 }
