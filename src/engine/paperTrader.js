@@ -99,13 +99,14 @@ ${pnlEmoji} *Net PnL:* \`$${netProfit.toFixed(2)}\`
     try {
       const checkRes = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${symbol}`);
       const checkData = await checkRes.json();
-      if (!checkData.price || isNaN(parseFloat(checkData.price))) {
+      
+      // Sadece kesin olarak "Geçersiz Sembol" (-1121) derse engelle
+      if (checkData.code === -1121) {
         console.log(`[PaperTrader] ⛔ ${symbol} Binance Futures'ta yok, sinyal reddedildi.`);
         return;
       }
     } catch (e) {
-      console.log(`[PaperTrader] ⛔ ${symbol} doğrulanamadı, sinyal reddedildi.`);
-      return;
+      console.log(`[PaperTrader] ⚠️ ${symbol} API uyarısı (${e.message}), işlem devam ediyor.`);
     }
 
     // ──────────────────────────────────────────────────────
@@ -214,20 +215,37 @@ ${pnlEmoji}: *$${netPnl.toFixed(2)}*
       if (!this.activeTrades.has(tradeId)) return;
       const t = this.activeTrades.get(tradeId);
       if (t && t.monitorInterval) clearInterval(t.monitorInterval);
-      try {
-        const res = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${symbol}`);
-        const data = await res.json();
-        const exitPx = parseFloat(data.price);
-        if (!isNaN(exitPx)) {
-          // SL/TP vurmadı, 3 dakika doldu. Anlık fiyattan kapat → PnL hesapla
-          await closeTrade('3M SÜRE DOLDU', exitPx);
-        } else {
-          // Geçersiz coin (zaten başta kontrol ettik ama ek güvenlik)
+      
+      const tryClose = async (retries = 5) => {
+        if (!this.activeTrades.has(tradeId)) return;
+        if (retries === 0) {
+          console.log(`[PaperTrader] ⚠️ ${symbol} fiyatı 5 denemede alınamadı, işlem siliniyor.`);
           this.activeTrades.delete(tradeId);
+          return;
         }
-      } catch(e) {
-        this.activeTrades.delete(tradeId);
-      }
+        try {
+          const res = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${symbol}`);
+          const data = await res.json();
+          
+          if (data.code === -1121) {
+            // Kesinlikle geçersiz coin
+            this.activeTrades.delete(tradeId);
+            return;
+          }
+
+          const exitPx = parseFloat(data.price);
+          if (!isNaN(exitPx)) {
+            await closeTrade('3M SÜRE DOLDU', exitPx);
+          } else {
+            // Fiyat yok (muhtemelen rate limit), 2 sn bekle ve tekrar dene
+            setTimeout(() => tryClose(retries - 1), 2000);
+          }
+        } catch(e) {
+          setTimeout(() => tryClose(retries - 1), 2000);
+        }
+      };
+      
+      tryClose();
     }, 3 * 60 * 1000);
 
     // ──────────────────────────────────────────────────────
