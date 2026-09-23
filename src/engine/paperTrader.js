@@ -191,8 +191,18 @@ ${pnlEmoji}: *$${netPnl.toFixed(2)}*
         const res = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${symbol}`);
         const data = await res.json();
         const exitPx = parseFloat(data.price);
-        if (!isNaN(exitPx)) await closeTrade('TIME LIMIT 3M', exitPx);
-      } catch(e) {}
+        
+        if (!isNaN(exitPx)) {
+          await closeTrade('TIME LIMIT 3M', exitPx);
+        } else {
+          // Fiyat gelmezse marjini boşaltmak için işlemi zorla sil
+          console.error(`[PaperTrader] ${symbol} için 3. dakika kapanış fiyatı alınamadı (NaN). İşlem siliniyor.`);
+          this.activeTrades.delete(tradeId);
+        }
+      } catch(e) {
+        console.error(`[PaperTrader] ${symbol} zaman aşımı API hatası:`, e.message);
+        this.activeTrades.delete(tradeId); // Hata olursa da sil, bakiye bloke kalmasın
+      }
     }, 3 * 60 * 1000);
 
     // 2. Fiyat Radarı (5 Saniyede Bir SL/TP Kontrolü)
