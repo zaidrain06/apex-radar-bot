@@ -5,7 +5,9 @@ const botStateSchema = new mongoose.Schema({
   balance: { type: Number, default: 0 },
   totalPnl: { type: Number, default: 0 },
   winCount: { type: Number, default: 0 },
-  lossCount: { type: Number, default: 0 }
+  lossCount: { type: Number, default: 0 },
+  consecutiveLosses: { type: Number, default: 0 },
+  lastResetDay: { type: String, default: '' }
 });
 
 module.exports = mongoose.model('BotState', botStateSchema);

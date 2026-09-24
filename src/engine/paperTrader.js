@@ -25,10 +25,10 @@ class PaperTrader {
     this.activeTrades = new Map();
 
     // ──────────────────────────────────────────────────────
-    // Günlük İşlem Limiti (Overtrading Koruyucusu)
+    // Akıllı Şalter (Drawdown Limit)
     // ──────────────────────────────────────────────────────
-    this.dailyTradeCount = 0;
-    this.dailyTradeLimit = 6;
+    this.consecutiveLosses = 0;
+    this.maxConsecutiveLosses = 3;
     this.lastResetDay = new Date().toDateString();
 
     // Fiyat takibi için MEXC Public API
@@ -42,9 +42,10 @@ class PaperTrader {
   checkDailyReset() {
     const today = new Date().toDateString();
     if (today !== this.lastResetDay) {
-      this.dailyTradeCount = 0;
+      this.consecutiveLosses = 0;
       this.lastResetDay = today;
-      console.log('[PaperTrader] 🌅 Yeni gün — Günlük işlem sayacı sıfırlandı.');
+      console.log('[PaperTrader] 🌅 Yeni gün — Peş peşe zarar sayacı sıfırlandı.');
+      this.saveState();
     }
   }
 
@@ -57,13 +58,15 @@ class PaperTrader {
       }
       let state = await BotState.findOne({ type: 'PAPER_V2' }).maxTimeMS(5000);
       if (!state) {
-        state = new BotState({ type: 'PAPER_V2', balance: 2000, winCount: 0, lossCount: 0 });
+        state = new BotState({ type: 'PAPER_V2', balance: 2000, winCount: 0, lossCount: 0, consecutiveLosses: 0, lastResetDay: new Date().toDateString() });
         await state.save();
       }
       this.balance = state.balance;
       this.winCount = state.winCount;
       this.lossCount = state.lossCount;
-      console.log(`🟢 [PaperTrader] Realistic State Loaded. Balance: $${this.balance}`);
+      this.consecutiveLosses = state.consecutiveLosses || 0;
+      this.lastResetDay = state.lastResetDay || new Date().toDateString();
+      console.log(`🟢 [PaperTrader] Realistic State Loaded. Balance: $${this.balance} | Drawdown: ${this.consecutiveLosses}/${this.maxConsecutiveLosses}`);
     } catch (e) {
       console.error('❌ [PaperTrader] MongoDB Init error:', e.message);
     }
@@ -75,7 +78,7 @@ class PaperTrader {
       if (mongoose.connection.readyState !== 1) return;
       await BotState.updateOne(
         { type: 'PAPER_V2' },
-        { balance: this.balance, winCount: this.winCount, lossCount: this.lossCount },
+        { balance: this.balance, winCount: this.winCount, lossCount: this.lossCount, consecutiveLosses: this.consecutiveLosses, lastResetDay: this.lastResetDay },
         { upsert: true }
       );
     } catch (e) {
@@ -104,7 +107,7 @@ class PaperTrader {
 ✅ Wins: ${this.winCount} | ❌ Losses: ${this.lossCount}
 🎯 Win Rate: ${winRate}%
 
-📅 Bugünkü İşlemler: ${this.dailyTradeCount}/${this.dailyTradeLimit}
+🛑 Peş Peşe Zarar: ${this.consecutiveLosses}/${this.maxConsecutiveLosses}
 ⏳ *Active Trades:* ${this.activeTrades.size}${activeList}
     `.trim();
 
@@ -115,11 +118,11 @@ class PaperTrader {
     if (!this.adminChatId) return;
 
     // ──────────────────────────────────────────────────────
-    // 0. GÜNLÜK İŞLEM LİMİTİ KONTROLÜ
+    // 0. AKILLI ŞALTER KONTROLÜ (Drawdown Limit)
     // ──────────────────────────────────────────────────────
     this.checkDailyReset();
-    if (this.dailyTradeCount >= this.dailyTradeLimit) {
-      console.log(`[PaperTrader] 📅 Günlük limit doldu (${this.dailyTradeLimit} işlem). Sinyal reddedildi.`);
+    if (this.consecutiveLosses >= this.maxConsecutiveLosses) {
+      console.log(`[PaperTrader] 🛑 ŞALTER İNDİ! Peş peşe ${this.maxConsecutiveLosses} zarar. Bugünlük işlem durduruldu.`);
       return;
     }
 
@@ -225,9 +228,6 @@ class PaperTrader {
       monitorInterval: null
     });
 
-    // Günlük sayacı artır
-    this.dailyTradeCount++;
-
     const entryMsg = `
 👻 *SHADOW BOT ENTRY (SIMULATION)*
 ${coinTag} Asset: #${cleanSymbol}
@@ -236,7 +236,7 @@ ${coinTag} Asset: #${cleanSymbol}
 💵 Cascade Fiyatı: \`$${rawEntryPrice.toFixed(4)}\`
 💵 Giriş (Slippage +%0.15): \`$${entryPrice.toFixed(4)}\`
 🛑 SL: \`$${slPrice.toFixed(4)}\` | 🟢 TP: \`$${tpPrice.toFixed(4)}\` (${isMajor ? '%1.5' : '%4'})
-📅 Günlük İşlem: ${this.dailyTradeCount}/${this.dailyTradeLimit}
+🛑 Peş Peşe Zarar: ${this.consecutiveLosses}/${this.maxConsecutiveLosses}
     `.trim();
 
     await this.telegram.sendMessage(this.adminChatId, entryMsg);
@@ -256,8 +256,13 @@ ${coinTag} Asset: #${cleanSymbol}
       const netPnl = grossPnl - fee;
 
       this.balance += netPnl;
-      if (netPnl > 0) this.winCount++;
-      else this.lossCount++;
+      if (netPnl > 0) {
+        this.winCount++;
+        this.consecutiveLosses = 0; // Win gelirse şalteri sıfırla!
+      } else {
+        this.lossCount++;
+        this.consecutiveLosses++; // Loss gelirse sayacı artır
+      }
 
       this.saveState();
       

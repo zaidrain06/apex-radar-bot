@@ -20,9 +20,9 @@ class RealTrader {
     this.winCount = 0;
     this.lossCount = 0;
 
-    // Günlük İşlem Limiti
-    this.dailyTradeCount = 0;
-    this.dailyTradeLimit = 6;
+    // Akıllı Şalter (Drawdown Limit)
+    this.consecutiveLosses = 0;
+    this.maxConsecutiveLosses = 3;
     this.lastResetDay = new Date().toDateString();
 
     // MEXC API Bağlantısı
@@ -46,9 +46,10 @@ class RealTrader {
   checkDailyReset() {
     const today = new Date().toDateString();
     if (today !== this.lastResetDay) {
-      this.dailyTradeCount = 0;
+      this.consecutiveLosses = 0;
       this.lastResetDay = today;
-      console.log('[RealTrader] 🌅 Yeni gün — Günlük işlem sayacı sıfırlandı.');
+      console.log('[RealTrader] 🌅 Yeni gün — Peş peşe zarar sayacı sıfırlandı.');
+      this.saveState();
     }
   }
 
@@ -61,13 +62,15 @@ class RealTrader {
       }
       let state = await BotState.findOne({ type: 'REAL_V2' }).maxTimeMS(5000);
       if (!state) {
-        state = new BotState({ type: 'REAL_V2', totalPnl: 0, winCount: 0, lossCount: 0 });
+        state = new BotState({ type: 'REAL_V2', totalPnl: 0, winCount: 0, lossCount: 0, consecutiveLosses: 0, lastResetDay: new Date().toDateString() });
         await state.save();
       }
       this.totalPnl = state.totalPnl;
       this.winCount = state.winCount;
       this.lossCount = state.lossCount;
-      console.log(`✅ [RealTrader] MongoDB State Loaded. Total PNL: $${this.totalPnl}`);
+      this.consecutiveLosses = state.consecutiveLosses || 0;
+      this.lastResetDay = state.lastResetDay || new Date().toDateString();
+      console.log(`✅ [RealTrader] MongoDB State Loaded. Total PNL: $${this.totalPnl} | Drawdown: ${this.consecutiveLosses}/${this.maxConsecutiveLosses}`);
     } catch (e) {
       console.error('❌ [RealTrader] MongoDB Init error:', e.message);
     }
@@ -79,7 +82,7 @@ class RealTrader {
       if (mongoose.connection.readyState !== 1) return;
       await BotState.updateOne(
         { type: 'REAL_V2' },
-        { totalPnl: this.totalPnl, winCount: this.winCount, lossCount: this.lossCount },
+        { totalPnl: this.totalPnl, winCount: this.winCount, lossCount: this.lossCount, consecutiveLosses: this.consecutiveLosses, lastResetDay: this.lastResetDay },
         { upsert: true }
       );
     } catch (e) {
@@ -91,11 +94,11 @@ class RealTrader {
     if (!this.exchange) return;
 
     // ──────────────────────────────────────────────────────
-    // 0. GÜNLÜK İŞLEM LİMİTİ KONTROLÜ
+    // 0. AKILLI ŞALTER KONTROLÜ (Drawdown Limit)
     // ──────────────────────────────────────────────────────
     this.checkDailyReset();
-    if (this.dailyTradeCount >= this.dailyTradeLimit) {
-      console.log(`[RealTrader] 📅 Günlük limit doldu (${this.dailyTradeLimit} işlem). Sinyal reddedildi.`);
+    if (this.consecutiveLosses >= this.maxConsecutiveLosses) {
+      console.log(`[RealTrader] 🛑 ŞALTER İNDİ! Peş peşe ${this.maxConsecutiveLosses} zarar. Bugünlük işlem durduruldu.`);
       return;
     }
 
@@ -168,9 +171,6 @@ class RealTrader {
       const order = await this.exchange.createMarketOrder(ccxtSymbol, orderSide, contracts);
       const tradeId = `REAL_${ccxtSymbol}_${Date.now()}`;
       const entryPrice = order.average || currentPrice;
-
-      // Günlük sayacı artır
-      this.dailyTradeCount++;
 
       // ──────────────────────────────────────────────────────
       // DİNAMİK SL/TP (MAJOR vs ALTCOIN)
@@ -263,7 +263,7 @@ ${coinTag} <b>${ccxtSymbol}</b>
 💰 Büyüklük: <b>$${this.tradeAmountUsd} USD</b> (Teminat: ~$5)
 💵 Giriş Fiyatı: <code>$${entryPrice.toFixed(4)}</code>
 🛑 SL: <code>$${slPrice.toFixed(4)}</code> | 🟢 TP: <code>$${tpPrice.toFixed(4)}</code> (${isMajor ? '%1.5' : '%4'})${nativeTag}
-📅 Günlük İşlem: ${this.dailyTradeCount}/${this.dailyTradeLimit}
+🛑 Peş Peşe Zarar: ${this.consecutiveLosses}/${this.maxConsecutiveLosses}
 =====================
 🤖 <i>RealTrader Engine v2</i>
       `.trim();
@@ -375,8 +375,13 @@ ${coinTag} <b>${ccxtSymbol}</b>
       const pnlUsd = (this.tradeAmountUsd / this.leverage) * leveragedPnlPercentage;
 
       this.totalPnl += pnlUsd;
-      if (pnlUsd > 0) this.winCount++;
-      else this.lossCount++;
+      if (pnlUsd > 0) {
+        this.winCount++;
+        this.consecutiveLosses = 0; // Win durumunda sıfırla
+      } else {
+        this.lossCount++;
+        this.consecutiveLosses++; // Loss durumunda artır
+      }
 
       this.saveState();
 
@@ -476,8 +481,13 @@ ${pnlEmoji} (MEXC Native SL/TP)
       const pnlUsd = (this.tradeAmountUsd / this.leverage) * leveragedPnlPercentage;
 
       this.totalPnl += pnlUsd;
-      if (pnlUsd > 0) this.winCount++;
-      else this.lossCount++;
+      if (pnlUsd > 0) {
+        this.winCount++;
+        this.consecutiveLosses = 0; // Win durumunda sıfırla
+      } else {
+        this.lossCount++;
+        this.consecutiveLosses++; // Loss durumunda artır
+      }
 
       this.saveState();
 
