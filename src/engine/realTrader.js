@@ -355,7 +355,7 @@ ${coinTag} <b>${ccxtSymbol}</b>
       }
 
       // Son işlemlerden çıkış fiyatını bul
-      let exitPrice = trade.entryPrice; // fallback
+      let exitPrice = null;
       try {
         const myTrades = await this.exchange.fetchMyTrades(trade.symbol, trade.timestamp - 1000, 10);
         const closingTrades = myTrades.filter(t =>
@@ -366,10 +366,19 @@ ${coinTag} <b>${ccxtSymbol}</b>
           exitPrice = closingTrades[closingTrades.length - 1].price;
         }
       } catch (e) {
-        console.warn(`[RealTrader] Çıkış fiyatı alınamadı, giriş fiyatı kullanılıyor.`);
+        console.warn(`[RealTrader] fetchMyTrades başarısız, anlık fiyata geçiliyor.`);
+      }
+      if (!exitPrice) {
+        try {
+          exitPrice = (await this.exchange.fetchTicker(trade.symbol)).last;
+          console.warn(`[RealTrader] Çıkış fiyatı anlık fiyattan alındı: $${exitPrice}`);
+        } catch (e) {
+          exitPrice = trade.entryPrice; // son çare
+          console.warn(`[RealTrader] Çıkış fiyatı alınamadı, giriş fiyatı kullanılıyor.`);
+        }
       }
 
-      // PnL Hesapla
+      // PnL Hesapla (komisyon dahil)
       let pnlPercentage = 0;
       if (trade.side === 'buy') {
         pnlPercentage = (exitPrice - trade.entryPrice) / trade.entryPrice;
@@ -377,10 +386,12 @@ ${coinTag} <b>${ccxtSymbol}</b>
         pnlPercentage = (trade.entryPrice - exitPrice) / trade.entryPrice;
       }
       const leveragedPnlPercentage = pnlPercentage * this.leverage;
-      const pnlUsd = (this.tradeAmountUsd / this.leverage) * leveragedPnlPercentage;
+      const grossPnlUsd = (this.tradeAmountUsd / this.leverage) * leveragedPnlPercentage;
+      const fee = this.tradeAmountUsd * 0.0016; // %0.08 giriş + %0.08 çıkış komisyonu
+      const netPnlUsd = grossPnlUsd - fee;
 
-      this.totalPnl += pnlUsd;
-      if (pnlUsd > 0) {
+      this.totalPnl += netPnlUsd;
+      if (netPnlUsd > 0) {
         this.winCount++;
         this.consecutiveLosses = 0; // Win durumunda sıfırla
       } else {
@@ -403,26 +414,28 @@ ${coinTag} <b>${ccxtSymbol}</b>
           entryPrice: trade.entryPrice,
           exitPrice: exitPrice,
           tradeDurationMs: Date.now() - trade.timestamp,
-          closeReason: pnlUsd > 0 ? 'TP' : 'SL', // Native kapandığı için ya TP ya SL
+          closeReason: netPnlUsd > 0 ? 'TP' : 'SL', // Native kapandığı için ya TP ya SL
           pnlPercent: pnlPercentage,
-          isWin: pnlUsd > 0
+          isWin: netPnlUsd > 0
         });
         await mlData.save();
-        console.log(`[RealTrader] 🧠 ML Dataset Kaydedildi (Native): ${trade.symbol} -> Win: ${pnlUsd > 0}`);
+        console.log(`[RealTrader] 🧠 ML Dataset Kaydedildi (Native): ${trade.symbol} -> Win: ${netPnlUsd > 0}`);
       } catch (e) {
         console.error('[RealTrader] ❌ ML Dataset Kayıt Hatası (Native):', e.message);
       }
 
       this.activeTrades.delete(tradeId);
 
-      const pnlEmoji = pnlUsd >= 0 ? '🟢 GERÇEK KÂR' : '🔴 GERÇEK ZARAR';
+      const pnlEmoji = netPnlUsd >= 0 ? '🟢 GERÇEK KÂR' : '🔴 GERÇEK ZARAR';
       const msg = `
 ${pnlEmoji} (MEXC Native SL/TP)
 =====================
 🪙 <b>${trade.symbol}</b>
 🎯 Yön: <b>${trade.side.toUpperCase()}</b>
 💵 Çıkış Fiyatı: <code>$${exitPrice.toFixed(4)}</code>
-💵 Net PnL: <b>$${pnlUsd.toFixed(2)} USD</b>
+💵 Brüt PnL: <b>$${grossPnlUsd.toFixed(2)} USD</b>
+💸 Komisyon: <b>-$${fee.toFixed(2)} USD</b>
+💵 Net PnL: <b>$${netPnlUsd.toFixed(2)} USD</b>
 📈 Kâr Oranı (10x): <b>%${(leveragedPnlPercentage * 100).toFixed(2)}</b>
 💰 Toplam Net PnL: <b>$${this.totalPnl.toFixed(2)}</b>
 🛡️ <i>Wick korumalı Mark Price ile kapatıldı</i>
@@ -485,10 +498,12 @@ ${pnlEmoji} (MEXC Native SL/TP)
         pnlPercentage = (trade.entryPrice - exitPrice) / trade.entryPrice;
       }
       const leveragedPnlPercentage = pnlPercentage * this.leverage;
-      const pnlUsd = (this.tradeAmountUsd / this.leverage) * leveragedPnlPercentage;
+      const grossPnlUsd = (this.tradeAmountUsd / this.leverage) * leveragedPnlPercentage;
+      const fee = this.tradeAmountUsd * 0.0016; // %0.08 giriş + %0.08 çıkış komisyonu
+      const netPnlUsd = grossPnlUsd - fee;
 
-      this.totalPnl += pnlUsd;
-      if (pnlUsd > 0) {
+      this.totalPnl += netPnlUsd;
+      if (netPnlUsd > 0) {
         this.winCount++;
         this.consecutiveLosses = 0; // Win durumunda sıfırla
       } else {
@@ -513,24 +528,26 @@ ${pnlEmoji} (MEXC Native SL/TP)
           tradeDurationMs: Date.now() - trade.timestamp,
           closeReason: 'TIMEOUT/MANUAL',
           pnlPercent: pnlPercentage,
-          isWin: pnlUsd > 0
+          isWin: netPnlUsd > 0
         });
         await mlData.save();
-        console.log(`[RealTrader] 🧠 ML Dataset Kaydedildi (Manual/Timeout): ${trade.symbol} -> Win: ${pnlUsd > 0}`);
+        console.log(`[RealTrader] 🧠 ML Dataset Kaydedildi (Manual/Timeout): ${trade.symbol} -> Win: ${netPnlUsd > 0}`);
       } catch (e) {
         console.error('[RealTrader] ❌ ML Dataset Kayıt Hatası (Manual):', e.message);
       }
 
       this.activeTrades.delete(tradeId);
 
-      const pnlEmoji = pnlUsd >= 0 ? '🟢 GERÇEK KÂR' : '🔴 GERÇEK ZARAR';
+      const pnlEmoji = netPnlUsd >= 0 ? '🟢 GERÇEK KÂR' : '🔴 GERÇEK ZARAR';
       const msg = `
 ${pnlEmoji} (Manuel/Timeout Kapatma)
 =====================
 🪙 <b>${trade.symbol}</b>
 🎯 Yön: <b>${trade.side.toUpperCase()}</b>
 💵 Çıkış Fiyatı: <code>$${exitPrice.toFixed(4)}</code>
-💵 Net PnL: <b>$${pnlUsd.toFixed(2)} USD</b>
+💵 Brüt PnL: <b>$${grossPnlUsd.toFixed(2)} USD</b>
+💸 Komisyon: <b>-$${fee.toFixed(2)} USD</b>
+💵 Net PnL: <b>$${netPnlUsd.toFixed(2)} USD</b>
 📈 Kâr Oranı (10x): <b>%${(leveragedPnlPercentage * 100).toFixed(2)}</b>
 💰 Toplam Net PnL: <b>$${this.totalPnl.toFixed(2)}</b>
 =====================
