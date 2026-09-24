@@ -1,5 +1,6 @@
 const ccxt = require('ccxt');
 const BotState = require('../db/botState');
+const MLDataset = require('../db/mlDataset');
 
 // Major coin listesi: Bu coinlerde TP daha düşük tutulur
 const MAJOR_COINS = ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'ADA', 'DOGE', 'TRX', 'AVAX', 'DOT'];
@@ -125,12 +126,13 @@ class RealTrader {
       // ──────────────────────────────────────────────────────
       // 0.5. BTC TREND FİLTRESİ (Genel Çöküş Koruması)
       // ──────────────────────────────────────────────────────
+      let btcChange = 0; // Makine Öğrenimi için global tanımlandı
       try {
         const btcOhlcv = await this.exchange.fetchOHLCV('BTC/USDT:USDT', '1m', undefined, 6);
         if (btcOhlcv && btcOhlcv.length >= 2) {
           const btcPriceBefore = btcOhlcv[0][4]; // 5 dakika önceki kapanış
           const btcPriceNow = btcOhlcv[btcOhlcv.length - 1][4]; // Şu anki kapanış
-          const btcChange = (btcPriceNow - btcPriceBefore) / btcPriceBefore;
+          btcChange = (btcPriceNow - btcPriceBefore) / btcPriceBefore;
 
           if (btcChange < -0.01 && orderSide === 'buy') {
             console.log(`[RealTrader] 🛑 BTC Filtresi: BTC ${(btcChange * 100).toFixed(2)}% düştü, BUY cascade reddedildi. (Genel çöküş)`);
@@ -238,6 +240,7 @@ class RealTrader {
         amount: order.filled || contracts,
         slPrice,
         tpPrice,
+        btcChange5m: btcChange,
         slOrderId,
         tpOrderId,
         nativeSLTPActive,
@@ -376,6 +379,30 @@ ${coinTag} <b>${ccxtSymbol}</b>
       else this.lossCount++;
 
       this.saveState();
+
+      // ──────────────────────────────────────────────────────
+      // DATA HARVESTER (Yapay Zeka İçin Veri Toplama)
+      // ──────────────────────────────────────────────────────
+      try {
+        const mlData = new MLDataset({
+          tradeId: tradeId,
+          botType: 'REAL',
+          symbol: trade.symbol,
+          side: trade.side.toUpperCase(),
+          btcChange5m: trade.btcChange5m || 0,
+          entryPrice: trade.entryPrice,
+          exitPrice: exitPrice,
+          tradeDurationMs: Date.now() - trade.timestamp,
+          closeReason: pnlUsd > 0 ? 'TP' : 'SL', // Native kapandığı için ya TP ya SL
+          pnlPercent: pnlPercentage,
+          isWin: pnlUsd > 0
+        });
+        await mlData.save();
+        console.log(`[RealTrader] 🧠 ML Dataset Kaydedildi (Native): ${trade.symbol} -> Win: ${pnlUsd > 0}`);
+      } catch (e) {
+        console.error('[RealTrader] ❌ ML Dataset Kayıt Hatası (Native):', e.message);
+      }
+
       this.activeTrades.delete(tradeId);
 
       const pnlEmoji = pnlUsd >= 0 ? '🟢 GERÇEK KÂR' : '🔴 GERÇEK ZARAR';
@@ -453,6 +480,30 @@ ${pnlEmoji} (MEXC Native SL/TP)
       else this.lossCount++;
 
       this.saveState();
+
+      // ──────────────────────────────────────────────────────
+      // DATA HARVESTER (Yapay Zeka İçin Veri Toplama)
+      // ──────────────────────────────────────────────────────
+      try {
+        const mlData = new MLDataset({
+          tradeId: tradeId,
+          botType: 'REAL',
+          symbol: trade.symbol,
+          side: trade.side.toUpperCase(),
+          btcChange5m: trade.btcChange5m || 0,
+          entryPrice: trade.entryPrice,
+          exitPrice: exitPrice,
+          tradeDurationMs: Date.now() - trade.timestamp,
+          closeReason: 'TIMEOUT/MANUAL',
+          pnlPercent: pnlPercentage,
+          isWin: pnlUsd > 0
+        });
+        await mlData.save();
+        console.log(`[RealTrader] 🧠 ML Dataset Kaydedildi (Manual/Timeout): ${trade.symbol} -> Win: ${pnlUsd > 0}`);
+      } catch (e) {
+        console.error('[RealTrader] ❌ ML Dataset Kayıt Hatası (Manual):', e.message);
+      }
+
       this.activeTrades.delete(tradeId);
 
       const pnlEmoji = pnlUsd >= 0 ? '🟢 GERÇEK KÂR' : '🔴 GERÇEK ZARAR';

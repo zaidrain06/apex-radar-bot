@@ -1,4 +1,5 @@
 const BotState = require('../db/botState');
+const MLDataset = require('../db/mlDataset');
 const ccxt = require('ccxt');
 
 // ──────────────────────────────────────────────────────
@@ -147,18 +148,15 @@ class PaperTrader {
 
     // ──────────────────────────────────────────────────────
     // 2. BTC TREND FİLTRESİ (Genel Çöküş Koruması)
-    // BTC son 5 dakikada %1'den fazla düştüyse ve biz BUY
-    // açacaksak → Bu cascade değil, genel çöküş. GİRME.
-    // BTC son 5 dakikada %1'den fazla yükseldiyse ve biz SELL
-    // açacaksak → Bu cascade değil, genel pump. GİRME.
     // ──────────────────────────────────────────────────────
     const tradeType = cascadeData.side === 'SELL' ? 'buy' : 'sell';
+    let btcChange = 0; // Makine Öğrenimi için global tanımlandı
     try {
       const btcOhlcv = await this.exchange.fetchOHLCV('BTC/USDT:USDT', '1m', undefined, 6);
       if (btcOhlcv && btcOhlcv.length >= 2) {
         const btcPriceBefore = btcOhlcv[0][4]; // 5 dakika önceki kapanış
         const btcPriceNow = btcOhlcv[btcOhlcv.length - 1][4]; // Şu anki kapanış
-        const btcChange = (btcPriceNow - btcPriceBefore) / btcPriceBefore;
+        btcChange = (btcPriceNow - btcPriceBefore) / btcPriceBefore;
 
         if (btcChange < -0.01 && tradeType === 'buy') {
           console.log(`[PaperTrader] 🛑 BTC Filtresi: BTC ${(btcChange * 100).toFixed(2)}% düştü, BUY cascade reddedildi. (Genel çöküş)`);
@@ -222,6 +220,7 @@ class PaperTrader {
       entryPrice: entryPrice,
       slPrice: slPrice,
       tpPrice: tpPrice,
+      btcChange5m: btcChange,
       startTime: Date.now(),
       monitorInterval: null
     });
@@ -261,6 +260,32 @@ ${coinTag} Asset: #${cleanSymbol}
       else this.lossCount++;
 
       this.saveState();
+      
+      const tradeData = this.activeTrades.get(tradeId);
+      
+      // ──────────────────────────────────────────────────────
+      // DATA HARVESTER (Yapay Zeka İçin Veri Toplama)
+      // ──────────────────────────────────────────────────────
+      try {
+        const mlData = new MLDataset({
+          tradeId: tradeId,
+          botType: 'PAPER',
+          symbol: tradeData.symbol,
+          side: tradeData.type.toUpperCase(),
+          btcChange5m: tradeData.btcChange5m || 0,
+          entryPrice: entryPrice,
+          exitPrice: exitPrice,
+          tradeDurationMs: Date.now() - tradeData.startTime,
+          closeReason: reason,
+          pnlPercent: pnlPercentage,
+          isWin: netPnl > 0
+        });
+        await mlData.save();
+        console.log(`[PaperTrader] 🧠 ML Dataset Kaydedildi: ${tradeData.symbol} -> Win: ${netPnl > 0}`);
+      } catch (e) {
+        console.error('[PaperTrader] ❌ ML Dataset Kayıt Hatası:', e.message);
+      }
+
       this.activeTrades.delete(tradeId);
 
       const pnlEmoji = netPnl >= 0 ? '🟢 PROFIT' : '🔴 LOSS';
