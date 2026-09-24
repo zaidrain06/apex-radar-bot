@@ -457,7 +457,7 @@ ${pnlEmoji} (MEXC Native SL/TP)
       while (attempts < maxAttempts && !closeOrder) {
         try {
           attempts++;
-          closeOrder = await this.exchange.createMarketOrder(trade.symbol, closeSide, trade.amount);
+          closeOrder = await this.exchange.createMarketOrder(trade.symbol, closeSide, trade.amount, undefined, { reduceOnly: true });
         } catch (err) {
           console.error(`[RealTrader] Kapatma Hatası (${attempts}/${maxAttempts}): ${trade.symbol} - ${err.message}`);
           if (attempts >= maxAttempts) {
