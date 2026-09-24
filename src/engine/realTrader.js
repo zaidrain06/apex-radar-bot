@@ -210,10 +210,7 @@ class RealTrader {
           {
             stopPrice: parseFloat(slPrice.toFixed(market.precision?.price || 4)),
             reduceOnly: true,
-            workingType: 'MARK_PRICE',
-            openType: 1,
-            marginMode: 'isolated',
-            isIsolated: true
+            workingType: 'MARK_PRICE'
           }
         );
         slOrderId = slOrder.id;
@@ -229,10 +226,7 @@ class RealTrader {
           {
             stopPrice: parseFloat(tpPrice.toFixed(market.precision?.price || 4)),
             reduceOnly: true,
-            workingType: 'MARK_PRICE',
-            openType: 1,
-            marginMode: 'isolated',
-            isIsolated: true
+            workingType: 'MARK_PRICE'
           }
         );
         tpOrderId = tpOrder.id;
@@ -469,10 +463,7 @@ ${pnlEmoji} (MEXC Native SL/TP)
         try {
           attempts++;
           closeOrder = await this.exchange.createMarketOrder(trade.symbol, closeSide, trade.amount, undefined, { 
-            reduceOnly: true,
-            openType: 1,
-            marginMode: 'isolated',
-            isIsolated: true 
+            reduceOnly: true
           });
         } catch (err) {
           console.error(`[RealTrader] Kapatma Hatası (${attempts}/${maxAttempts}): ${trade.symbol} - ${err.message}`);
