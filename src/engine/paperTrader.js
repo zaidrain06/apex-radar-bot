@@ -205,34 +205,6 @@ ${pnlEmoji}: *$${netPnl.toFixed(2)}*
       await this.telegram.sendMessage(this.adminChatId, closeMsg);
     };
 
-    const timeoutId = setTimeout(async () => {
-      if (!this.activeTrades.has(tradeId)) return;
-      const t = this.activeTrades.get(tradeId);
-      if (t && t.monitorInterval) clearInterval(t.monitorInterval);
-      
-      const tryClose = async (retries = 5) => {
-        if (!this.activeTrades.has(tradeId)) return;
-        if (retries === 0) {
-          console.log(`[PaperTrader] ⚠️ ${ccxtSymbol} fiyatı alınamadı, işlem siliniyor.`);
-          this.activeTrades.delete(tradeId);
-          return;
-        }
-        try {
-          const ticker = await this.exchange.fetchTicker(ccxtSymbol);
-          const exitPx = ticker.last;
-          if (exitPx) {
-            await closeTrade('3M SÜRE DOLDU', exitPx);
-          } else {
-            setTimeout(() => tryClose(retries - 1), 2000);
-          }
-        } catch(e) {
-          setTimeout(() => tryClose(retries - 1), 2000);
-        }
-      };
-      
-      tryClose();
-    }, 3 * 60 * 1000);
-
     const monitorInterval = setInterval(async () => {
       if (!this.activeTrades.has(tradeId)) {
         clearInterval(monitorInterval);
@@ -252,7 +224,6 @@ ${pnlEmoji}: *$${netPnl.toFixed(2)}*
 
         if (hitLimit) {
           clearInterval(monitorInterval);
-          clearTimeout(timeoutId);
           await closeTrade('SL/TP HIT', currentPx);
         }
       } catch(e) {}

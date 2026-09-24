@@ -263,15 +263,6 @@ class RealTrader {
       const tradeRef = this.activeTrades.get(tradeId);
       if (tradeRef) tradeRef.monitorInterval = monitorInterval;
 
-      // 5 Dakika Maksimum Süre (Native SL/TP için 3 yerine 5dk - MEXC'in zaman alması için)
-      setTimeout(() => {
-        const t = this.activeTrades.get(tradeId);
-        if (!t) return;
-        if (t.monitorInterval) clearInterval(t.monitorInterval);
-        console.log(`[RealTrader] ⏰ Maksimum süre doldu: ${ccxtSymbol} kapatılıyor...`);
-        this.closeTrade(tradeId);
-      }, 5 * 60 * 1000);
-
     } catch (error) {
       console.error(`❌ [RealTrader] Emir gönderilirken HATA:`, error.message);
       await this.telegram.sendMessage(this.adminChatId, `❌ <b>RealTrader Hata:</b> ${error.message}`);
