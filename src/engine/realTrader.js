@@ -218,11 +218,10 @@ class RealTrader {
           console.warn(`[RealTrader] Pozisyon ID alınamadı, devam: ${e.message}`);
         }
 
-        const pricePrecision = market.precision?.price || 4;
         const stopParams = {
           symbol: market.id,
-          stopLossPrice: parseFloat(slPrice.toFixed(pricePrecision)),
-          takeProfitPrice: parseFloat(tpPrice.toFixed(pricePrecision)),
+          stopLossPrice: parseFloat(this.exchange.priceToPrecision(ccxtSymbol, slPrice)),
+          takeProfitPrice: parseFloat(this.exchange.priceToPrecision(ccxtSymbol, tpPrice)),
           vol: order.filled || contracts,
           openType: 1 // isolated margin
         };
@@ -232,7 +231,7 @@ class RealTrader {
         if (stopResp) {
           stopOrderId = stopResp?.data || null;
           nativeSLTPActive = true;
-          console.log(`[RealTrader] 🛡️ Native SL/TP YERLEŞTİRİLDİ | SL: $${slPrice.toFixed(4)} | TP: $${tpPrice.toFixed(4)}`);
+          console.log(`[RealTrader] 🛡️ Native SL/TP YERLEŞTİRİLDİ | SL: $${this.exchange.priceToPrecision(ccxtSymbol, slPrice)} | TP: $${this.exchange.priceToPrecision(ccxtSymbol, tpPrice)}`);
         }
       } catch (e) {
         console.warn(`[RealTrader] ⚠️ Native SL/TP yerleştirilemedi (fallback polling aktif): ${e.message}`);
