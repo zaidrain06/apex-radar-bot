@@ -163,12 +163,19 @@ class RealTrader {
 
       try {
         await this.exchange.setMarginMode('isolated', ccxtSymbol);
+      } catch (e) {
+        console.log(`[RealTrader] İzole moda geçilemedi (Cross devam edebilir): ${e.message}`);
+      }
+      try {
         await this.exchange.setLeverage(this.leverage, ccxtSymbol);
       } catch (e) {
-        console.log(`[RealTrader] Kaldıraç ayarlanırken uyarı: ${e.message}`);
+        console.log(`[RealTrader] Kaldıraç ayarlanamadı: ${e.message}`);
       }
 
-      const order = await this.exchange.createMarketOrder(ccxtSymbol, orderSide, contracts);
+      // MEXC API'sini İzole Marjin'e zorlamak için ekstra parametreler
+      const orderParams = { openType: 1, marginMode: 'isolated', isIsolated: true };
+      
+      const order = await this.exchange.createMarketOrder(ccxtSymbol, orderSide, contracts, undefined, orderParams);
       const tradeId = `REAL_${ccxtSymbol}_${Date.now()}`;
       const entryPrice = order.average || currentPrice;
 
@@ -187,8 +194,6 @@ class RealTrader {
 
       // =====================================================
       // 🛡️ NATIVE SL/TP: MEXC'E BORSADA KAYDEDİYORUZ
-      // MARK PRICE kullanır → İğne (wick) geçirmez!
-      // Render çökse bile MEXC pozisyonu kendi kapatır.
       // =====================================================
       let slOrderId = null;
       let tpOrderId = null;
@@ -205,7 +210,10 @@ class RealTrader {
           {
             stopPrice: parseFloat(slPrice.toFixed(market.precision?.price || 4)),
             reduceOnly: true,
-            workingType: 'MARK_PRICE'
+            workingType: 'MARK_PRICE',
+            openType: 1,
+            marginMode: 'isolated',
+            isIsolated: true
           }
         );
         slOrderId = slOrder.id;
@@ -221,7 +229,10 @@ class RealTrader {
           {
             stopPrice: parseFloat(tpPrice.toFixed(market.precision?.price || 4)),
             reduceOnly: true,
-            workingType: 'MARK_PRICE'
+            workingType: 'MARK_PRICE',
+            openType: 1,
+            marginMode: 'isolated',
+            isIsolated: true
           }
         );
         tpOrderId = tpOrder.id;
@@ -457,7 +468,12 @@ ${pnlEmoji} (MEXC Native SL/TP)
       while (attempts < maxAttempts && !closeOrder) {
         try {
           attempts++;
-          closeOrder = await this.exchange.createMarketOrder(trade.symbol, closeSide, trade.amount, undefined, { reduceOnly: true });
+          closeOrder = await this.exchange.createMarketOrder(trade.symbol, closeSide, trade.amount, undefined, { 
+            reduceOnly: true,
+            openType: 1,
+            marginMode: 'isolated',
+            isIsolated: true 
+          });
         } catch (err) {
           console.error(`[RealTrader] Kapatma Hatası (${attempts}/${maxAttempts}): ${trade.symbol} - ${err.message}`);
           if (attempts >= maxAttempts) {
