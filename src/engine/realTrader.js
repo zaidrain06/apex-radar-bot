@@ -162,19 +162,19 @@ class RealTrader {
       console.log(`[RealTrader] ⚡ İşlem Tetiklendi: ${ccxtSymbol} | Yön: ${orderSide.toUpperCase()} | Kontrat: ${contracts}`);
 
       try {
-        await this.exchange.setMarginMode('isolated', ccxtSymbol);
+        await this.exchange.setMarginMode('isolated', ccxtSymbol, { leverage: this.leverage });
       } catch (e) {
-        console.log(`[RealTrader] İzole moda geçilemedi (Cross devam edebilir): ${e.message}`);
+        console.log(`[RealTrader] setMarginMode uyarı: ${e.message}`);
       }
       try {
-        await this.exchange.setLeverage(this.leverage, ccxtSymbol);
+        await this.exchange.setLeverage(this.leverage, ccxtSymbol, { openType: 1, positionType: orderSide === 'buy' ? 1 : 2 });
       } catch (e) {
-        console.log(`[RealTrader] Kaldıraç ayarlanamadı: ${e.message}`);
+        console.log(`[RealTrader] setLeverage uyarı: ${e.message}`);
       }
 
-      // MEXC API'sini İzole Marjin'e zorlamak için ekstra parametreler
-      const orderParams = { openType: 1, marginMode: 'isolated', isIsolated: true };
-      
+      // MEXC isolated margin için kaldıracı emir parametresiyle gönder
+      const orderParams = { openType: 1, leverage: this.leverage };
+
       const order = await this.exchange.createMarketOrder(ccxtSymbol, orderSide, contracts, undefined, orderParams);
       const tradeId = `REAL_${ccxtSymbol}_${Date.now()}`;
       const entryPrice = order.average || currentPrice;
