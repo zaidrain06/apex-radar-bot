@@ -193,47 +193,49 @@ class RealTrader {
         : entryPrice * (1 - tpRatio);
 
       // =====================================================
-      // 🛡️ NATIVE SL/TP: MEXC'E BORSADA KAYDEDİYORUZ
+      // 🛡️ NATIVE SL/TP: MEXC STOP ORDER API
+      // Render çökse bile MEXC pozisyonu kendi kapatır!
       // =====================================================
-      let slOrderId = null;
-      let tpOrderId = null;
+      let stopOrderId = null;
       let nativeSLTPActive = false;
 
       try {
-        // Native Stop Loss (MARK_PRICE ile - wick korumalı)
-        const slOrder = await this.exchange.createOrder(
-          ccxtSymbol,
-          'STOP_MARKET',
-          closeSide,
-          contracts,
-          undefined,
-          {
-            stopPrice: parseFloat(slPrice.toFixed(market.precision?.price || 4)),
-            reduceOnly: true,
-            workingType: 'MARK_PRICE'
-          }
-        );
-        slOrderId = slOrder.id;
-        console.log(`[RealTrader] 🛡️ Native SL yerleştirildi: $${slPrice.toFixed(4)} (Mark Price)`);
+        // Pozisyonun borsaya işlenmesini bekle
+        await new Promise(r => setTimeout(r, 1500));
 
-        // Native Take Profit (MARK_PRICE ile - wick korumalı)
-        const tpOrder = await this.exchange.createOrder(
-          ccxtSymbol,
-          'TAKE_PROFIT_MARKET',
-          closeSide,
-          contracts,
-          undefined,
-          {
-            stopPrice: parseFloat(tpPrice.toFixed(market.precision?.price || 4)),
-            reduceOnly: true,
-            workingType: 'MARK_PRICE'
+        // Pozisyon ID'sini bul (MEXC bazen ister)
+        let positionId = null;
+        try {
+          const positions = await this.exchange.fetchPositions([ccxtSymbol]);
+          const myPos = positions.find(p =>
+            p.symbol === ccxtSymbol && Math.abs(p.contracts || 0) > 0
+          );
+          if (myPos?.info?.positionId) {
+            positionId = myPos.info.positionId;
+            console.log(`[RealTrader] 📍 Pozisyon ID: ${positionId}`);
           }
-        );
-        tpOrderId = tpOrder.id;
-        console.log(`[RealTrader] 🛡️ Native TP yerleştirildi: $${tpPrice.toFixed(4)} (Mark Price)`);
-        nativeSLTPActive = true;
+        } catch (e) {
+          console.warn(`[RealTrader] Pozisyon ID alınamadı, devam: ${e.message}`);
+        }
+
+        const pricePrecision = market.precision?.price || 4;
+        const stopParams = {
+          symbol: market.id,
+          stopLossPrice: parseFloat(slPrice.toFixed(pricePrecision)),
+          takeProfitPrice: parseFloat(tpPrice.toFixed(pricePrecision)),
+          vol: order.filled || contracts,
+          openType: 1 // isolated margin
+        };
+        if (positionId) stopParams.positionId = positionId;
+
+        const stopResp = await this.exchange.contractPrivatePostStoporderPlace(stopParams);
+        if (stopResp) {
+          stopOrderId = stopResp?.data || null;
+          nativeSLTPActive = true;
+          console.log(`[RealTrader] 🛡️ Native SL/TP YERLEŞTİRİLDİ | SL: $${slPrice.toFixed(4)} | TP: $${tpPrice.toFixed(4)}`);
+        }
       } catch (e) {
-        console.warn(`[RealTrader] ⚠️ Native SL/TP yerleştirilemedi (fallback fiyat polling'e): ${e.message}`);
+        console.warn(`[RealTrader] ⚠️ Native SL/TP yerleştirilemedi (fallback polling aktif): ${e.message}`);
         nativeSLTPActive = false;
       }
 
@@ -246,8 +248,7 @@ class RealTrader {
         slPrice,
         tpPrice,
         btcChange5m: btcChange,
-        slOrderId,
-        tpOrderId,
+        stopOrderId,
         nativeSLTPActive,
         orderId: order.id,
         timestamp: Date.now(),
@@ -343,14 +344,13 @@ ${coinTag} <b>${ccxtSymbol}</b>
     trade.isClosing = true;
 
     try {
-      // Kalan SL veya TP emirlerini iptal et (sadece biri tetiklendi)
-      for (const orderId of [trade.slOrderId, trade.tpOrderId]) {
-        if (orderId) {
-          try {
-            await this.exchange.cancelOrder(orderId, trade.symbol);
-          } catch (e) {
-            // Zaten dolmuş olabilir, yoksay
-          }
+      // Kalan stop emrini iptal et (SL veya TP'den biri zaten doldu)
+      if (trade.stopOrderId) {
+        try {
+          await this.exchange.contractPrivatePostStoporderCancel({ stopOrderId: trade.stopOrderId, symbol: trade.symbol });
+          console.log(`[RealTrader] Stop emri iptal edildi: ${trade.stopOrderId}`);
+        } catch (e) {
+          // Zaten dolmuş olabilir, yoksay
         }
       }
 
@@ -457,11 +457,12 @@ ${pnlEmoji} (MEXC Native SL/TP)
     if (trade.isClosing) return;
     trade.isClosing = true;
 
-    // Önce native emirleri iptal et
-    for (const orderId of [trade.slOrderId, trade.tpOrderId]) {
-      if (orderId) {
-        try { await this.exchange.cancelOrder(orderId, trade.symbol); } catch (e) {}
-      }
+    // Önce native stop emrini iptal et
+    if (trade.stopOrderId) {
+      try {
+        await this.exchange.contractPrivatePostStoporderCancel({ stopOrderId: trade.stopOrderId, symbol: trade.symbol });
+        console.log(`[RealTrader] Stop emri iptal edildi: ${trade.stopOrderId}`);
+      } catch (e) {}
     }
 
     try {
