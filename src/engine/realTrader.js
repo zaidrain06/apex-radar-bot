@@ -1,13 +1,16 @@
 const ccxt = require('ccxt');
 const BotState = require('../db/botState');
 
+// Major coin listesi: Bu coinlerde TP daha düşük tutulur
+const MAJOR_COINS = ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'ADA', 'DOGE', 'TRX', 'AVAX', 'DOT'];
+
 class RealTrader {
   constructor(telegramManager, adminChatId) {
     this.telegram = telegramManager;
     this.adminChatId = adminChatId;
-    
+
     // RİSK YÖNETİMİ - 50 DOLARLIK TEST
-    this.tradeAmountUsd = 50; 
+    this.tradeAmountUsd = 50;
     this.leverage = 10;
     this.activeTrades = new Map();
 
@@ -15,6 +18,11 @@ class RealTrader {
     this.totalPnl = 0;
     this.winCount = 0;
     this.lossCount = 0;
+
+    // Günlük İşlem Limiti
+    this.dailyTradeCount = 0;
+    this.dailyTradeLimit = 6;
+    this.lastResetDay = new Date().toDateString();
 
     // MEXC API Bağlantısı
     const apiKey = process.env.MEXC_API_KEY;
@@ -31,6 +39,15 @@ class RealTrader {
     } else {
       console.warn('⚠️ [RealTrader] MEXC API anahtarları bulunamadı. Gerçek işlemler kapalı.');
       this.exchange = null;
+    }
+  }
+
+  checkDailyReset() {
+    const today = new Date().toDateString();
+    if (today !== this.lastResetDay) {
+      this.dailyTradeCount = 0;
+      this.lastResetDay = today;
+      console.log('[RealTrader] 🌅 Yeni gün — Günlük işlem sayacı sıfırlandı.');
     }
   }
 
@@ -72,16 +89,26 @@ class RealTrader {
   async executeTrade(cascadeData) {
     if (!this.exchange) return;
 
+    // ──────────────────────────────────────────────────────
+    // 0. GÜNLÜK İŞLEM LİMİTİ KONTROLÜ
+    // ──────────────────────────────────────────────────────
+    this.checkDailyReset();
+    if (this.dailyTradeCount >= this.dailyTradeLimit) {
+      console.log(`[RealTrader] 📅 Günlük limit doldu (${this.dailyTradeLimit} işlem). Sinyal reddedildi.`);
+      return;
+    }
+
     try {
       const { symbol, side, avgPrice } = cascadeData;
-      
-      // FIX: Binance sends 'ETHUSDT'. CCXT expects 'ETH/USDT:USDT' for MEXC Futures.
+
       let ccxtSymbol = symbol;
       if (symbol.endsWith('USDT')) {
         ccxtSymbol = symbol.replace('USDT', '/USDT:USDT');
       }
 
-      // Ensure markets are loaded to access contractSize
+      const cleanSymbol = symbol.replace('USDT', '');
+      const isMajor = MAJOR_COINS.includes(cleanSymbol.toUpperCase());
+
       if (!this.exchange.markets || Object.keys(this.exchange.markets).length === 0) {
         await this.exchange.loadMarkets();
       }
@@ -91,16 +118,13 @@ class RealTrader {
         return;
       }
 
-      // Cascade bounce mantığı: Longs eridiyse fiyat düştü → toparlanma için BUY
       const isLongSqueeze = side === 'SELL';
       const orderSide = isLongSqueeze ? 'buy' : 'sell';
       const closeSide = orderSide === 'buy' ? 'sell' : 'buy';
 
-      // Coin'in anlık fiyatını alalım
       const ticker = await this.exchange.fetchTicker(ccxtSymbol);
       const currentPrice = ticker.last;
 
-      // 50$ lık pozisyon için kaç kontrat lazım?
       const coinAmount = this.tradeAmountUsd / currentPrice;
       const contractSize = market.contractSize || 1;
       const contractsRaw = coinAmount / contractSize;
@@ -108,7 +132,6 @@ class RealTrader {
 
       console.log(`[RealTrader] ⚡ İşlem Tetiklendi: ${ccxtSymbol} | Yön: ${orderSide.toUpperCase()} | Kontrat: ${contracts}`);
 
-      // GÜVENLİK: Önce kaldıracı ve marjin modunu ayarla
       try {
         await this.exchange.setMarginMode('isolated', ccxtSymbol);
         await this.exchange.setLeverage(this.leverage, ccxtSymbol);
@@ -116,14 +139,19 @@ class RealTrader {
         console.log(`[RealTrader] Kaldıraç ayarlanırken uyarı: ${e.message}`);
       }
 
-      // GERÇEK EMRİ PİYASAYA GÖNDER
       const order = await this.exchange.createMarketOrder(ccxtSymbol, orderSide, contracts);
       const tradeId = `REAL_${ccxtSymbol}_${Date.now()}`;
       const entryPrice = order.average || currentPrice;
 
-      // SL/TP Fiyatlarını Hesapla
-      const slRatio = 0.02; // %2 zarar
-      const tpRatio = 0.04; // %4 kâr
+      // Günlük sayacı artır
+      this.dailyTradeCount++;
+
+      // ──────────────────────────────────────────────────────
+      // DİNAMİK SL/TP (MAJOR vs ALTCOIN)
+      // ──────────────────────────────────────────────────────
+      const slRatio = 0.02;
+      const tpRatio = isMajor ? 0.015 : 0.04; // Major: %1.5 | Altcoin: %4
+
       const slPrice = orderSide === 'buy'
         ? entryPrice * (1 - slRatio)
         : entryPrice * (1 + slRatio);
@@ -196,28 +224,25 @@ class RealTrader {
       });
 
       // Telegram Bildirimi
+      const coinTag = isMajor ? '🏛️ MAJOR' : '🪙 ALTCOIN';
       const nativeTag = nativeSLTPActive
         ? '\n🛡️ <b>Native SL/TP AKTİF</b> (Mark Price, Wick Korumalı)'
         : '\n⚠️ <b>Fallback Polling Modu</b> (Native SL/TP başarısız)';
       const msg = `
 🟢 <b>GERÇEK İŞLEM AÇILDI (TEST)</b> 🟢
 =====================
-🪙 <b>${ccxtSymbol}</b>
+${coinTag} <b>${ccxtSymbol}</b>
 🎯 Yön: <b>${orderSide.toUpperCase()}</b>
 💰 Büyüklük: <b>$${this.tradeAmountUsd} USD</b> (Teminat: ~$5)
 💵 Giriş Fiyatı: <code>$${entryPrice.toFixed(4)}</code>
-🛑 SL: <code>$${slPrice.toFixed(4)}</code> | 🟢 TP: <code>$${tpPrice.toFixed(4)}</code>${nativeTag}
+🛑 SL: <code>$${slPrice.toFixed(4)}</code> | 🟢 TP: <code>$${tpPrice.toFixed(4)}</code> (${isMajor ? '%1.5' : '%4'})${nativeTag}
+📅 Günlük İşlem: ${this.dailyTradeCount}/${this.dailyTradeLimit}
 =====================
 🤖 <i>RealTrader Engine v2</i>
       `.trim();
 
       await this.telegram.sendMessage(this.adminChatId, msg);
 
-      // =====================================================
-      // POZİSYON TAKİP DÖNGÜSÜ
-      // Native SL/TP aktifse: MEXC'teki pozisyonu izle
-      // Fallback modundaysa: Fiyatı izle (eski yöntem)
-      // =====================================================
       const monitorInterval = setInterval(async () => {
         if (!this.activeTrades.has(tradeId)) {
           clearInterval(monitorInterval);
@@ -227,19 +252,16 @@ class RealTrader {
           const trade = this.activeTrades.get(tradeId);
 
           if (trade.nativeSLTPActive) {
-            // Native mod: MEXC'teki pozisyonu kontrol et
             const positions = await this.exchange.fetchPositions([trade.symbol]);
             const openPos = positions.find(p =>
               p.symbol === trade.symbol && Math.abs(p.contracts || 0) > 0
             );
             if (!openPos) {
-              // Pozisyon MEXC tarafından kapatıldı (SL veya TP vurdu)
               console.log(`[RealTrader] ✅ Pozisyon MEXC tarafından kapatıldı: ${trade.symbol}`);
               clearInterval(monitorInterval);
               await this.handleNativeClose(tradeId);
             }
           } else {
-            // Fallback mod: Fiyatı izle (wick'e açık ama native çalışmadı)
             const ticker = await this.exchange.fetchTicker(trade.symbol);
             const currentPx = ticker.last;
             let hitLimit = false;
@@ -251,6 +273,7 @@ class RealTrader {
             if (hitLimit) {
               console.log(`[RealTrader] 🛑 SL/TP (Fallback) Tetiklendi: ${trade.symbol} at ${currentPx}`);
               clearInterval(monitorInterval);
+              clearTimeout(timeoutId);
               this.closeTrade(tradeId);
             }
           }
@@ -262,6 +285,17 @@ class RealTrader {
       // Klima referansını kaydet
       const tradeRef = this.activeTrades.get(tradeId);
       if (tradeRef) tradeRef.monitorInterval = monitorInterval;
+
+      // ──────────────────────────────────────────────────────
+      // 5 DAKİKA TIMEOUT (Momentum bitti)
+      // ──────────────────────────────────────────────────────
+      const timeoutId = setTimeout(() => {
+        const t = this.activeTrades.get(tradeId);
+        if (!t) return;
+        if (t.monitorInterval) clearInterval(t.monitorInterval);
+        console.log(`[RealTrader] ⏰ 5 Dakika doldu, momentum bitti: ${ccxtSymbol} kapatılıyor...`);
+        this.closeTrade(tradeId);
+      }, 5 * 60 * 1000);
 
     } catch (error) {
       console.error(`❌ [RealTrader] Emir gönderilirken HATA:`, error.message);
