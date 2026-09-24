@@ -71,6 +71,9 @@ class RealTrader {
       this.consecutiveLosses = state.consecutiveLosses || 0;
       this.lastResetDay = state.lastResetDay || new Date().toDateString();
       console.log(`✅ [RealTrader] MongoDB State Loaded. Total PNL: $${this.totalPnl} | Drawdown: ${this.consecutiveLosses}/${this.maxConsecutiveLosses}`);
+
+      // Render yeniden başlasa bile açık pozisyonları kurtar
+      await this.recoverOpenPositions();
     } catch (e) {
       console.error('❌ [RealTrader] MongoDB Init error:', e.message);
     }
@@ -87,6 +90,103 @@ class RealTrader {
       );
     } catch (e) {
       console.error('❌ [RealTrader] MongoDB Save error:', e.message);
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // 🔄 AÇIK POZİSYON KURTARMA (Render yeniden başlayınca)
+  // ──────────────────────────────────────────────────────────────
+  async recoverOpenPositions() {
+    if (!this.exchange) return;
+    try {
+      console.log('[RealTrader] 🔄 Açık pozisyonlar kontrol ediliyor...');
+      if (!this.exchange.markets || Object.keys(this.exchange.markets).length === 0) {
+        await this.exchange.loadMarkets();
+      }
+      const positions = await this.exchange.fetchPositions();
+      const openPositions = positions.filter(p => Math.abs(p.contracts || 0) > 0);
+
+      if (openPositions.length === 0) {
+        console.log('[RealTrader] ✅ Kurtarılacak açık pozisyon yok.');
+        return;
+      }
+
+      console.log(`[RealTrader] ♻️ ${openPositions.length} açık pozisyon bulundu, kurtarılıyor...`);
+
+      for (const pos of openPositions) {
+        const symbol = pos.symbol;
+        const side = (pos.side === 'long') ? 'buy' : 'sell';
+        const entryPrice = pos.entryPrice || pos.info?.openPrice || 0;
+        const contracts = Math.abs(pos.contracts || 0);
+        const tradeId = `REAL_RECOVERED_${symbol}_${Date.now()}`;
+
+        // SL/TP oranlarını yeniden hesapla
+        const cleanSymbol = symbol.replace('/USDT:USDT', '').replace('/USDT', '');
+        const isMajor = MAJOR_COINS.includes(cleanSymbol.toUpperCase());
+        const slRatio = 0.02;
+        const tpRatio = isMajor ? 0.015 : 0.04;
+
+        const slPrice = side === 'buy'
+          ? entryPrice * (1 - slRatio)
+          : entryPrice * (1 + slRatio);
+        const tpPrice = side === 'buy'
+          ? entryPrice * (1 + tpRatio)
+          : entryPrice * (1 - tpRatio);
+
+        // Trade nesnesini Map'e geri yükle
+        this.activeTrades.set(tradeId, {
+          symbol,
+          side,
+          entryPrice,
+          amount: contracts,
+          slPrice,
+          tpPrice,
+          btcChange5m: 0,
+          stopOrderId: null,
+          nativeSLTPActive: false, // Fallback polling ile izlenir
+          orderId: null,
+          timestamp: Date.now(),
+          monitorInterval: null,
+          isClosing: false
+        });
+
+        // Fallback polling ile izlemeye başla (timeout yok - ne zaman açıldığı bilinmiyor)
+        const monitorInterval = setInterval(async () => {
+          if (!this.activeTrades.has(tradeId)) { clearInterval(monitorInterval); return; }
+          try {
+            const trade = this.activeTrades.get(tradeId);
+            const ticker = await this.exchange.fetchTicker(trade.symbol);
+            const currentPx = ticker.last;
+            let hitLimit = false;
+            if (trade.side === 'buy') {
+              if (currentPx >= trade.tpPrice || currentPx <= trade.slPrice) hitLimit = true;
+            } else {
+              if (currentPx <= trade.tpPrice || currentPx >= trade.slPrice) hitLimit = true;
+            }
+            if (hitLimit) {
+              console.log(`[RealTrader] 🛑 Kurtarılan işlem SL/TP Tetiklendi: ${trade.symbol} @ ${currentPx}`);
+              clearInterval(monitorInterval);
+              this.closeTrade(tradeId);
+            }
+          } catch (e) { /* Geçici API hatası, devam */ }
+        }, 5000);
+
+        const tradeRef = this.activeTrades.get(tradeId);
+        if (tradeRef) tradeRef.monitorInterval = monitorInterval;
+
+        // Telegram bildirimi
+        await this.telegram.sendMessage(this.adminChatId,
+          `♻️ <b>POZİSYON KURTARILDI</b>\n` +
+          `🪙 <b>${symbol}</b> | ${side.toUpperCase()}\n` +
+          `💵 Giriş: <code>$${entryPrice.toFixed(4)}</code>\n` +
+          `🛑 SL: <code>$${slPrice.toFixed(4)}</code> | 🟢 TP: <code>$${tpPrice.toFixed(4)}</code>\n` +
+          `⚠️ <i>Fallback polling aktif (Render yeniden başladı)</i>`
+        );
+
+        console.log(`[RealTrader] ♻️ Kurtarıldı: ${symbol} | ${side.toUpperCase()} | Giriş: $${entryPrice}`);
+      }
+    } catch (e) {
+      console.error('[RealTrader] ❌ Pozisyon kurtarma hatası:', e.message);
     }
   }
 
