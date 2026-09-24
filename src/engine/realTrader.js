@@ -58,9 +58,9 @@ class RealTrader {
          console.warn('⚠️ [RealTrader] MongoDB not connected, falling back to initial stats.');
          return;
       }
-      let state = await BotState.findOne({ type: 'REAL' }).maxTimeMS(5000);
+      let state = await BotState.findOne({ type: 'REAL_V2' }).maxTimeMS(5000);
       if (!state) {
-        state = new BotState({ type: 'REAL', totalPnl: 0, winCount: 0, lossCount: 0 });
+        state = new BotState({ type: 'REAL_V2', totalPnl: 0, winCount: 0, lossCount: 0 });
         await state.save();
       }
       this.totalPnl = state.totalPnl;
@@ -77,7 +77,7 @@ class RealTrader {
       const mongoose = require('mongoose');
       if (mongoose.connection.readyState !== 1) return;
       await BotState.updateOne(
-        { type: 'REAL' },
+        { type: 'REAL_V2' },
         { totalPnl: this.totalPnl, winCount: this.winCount, lossCount: this.lossCount },
         { upsert: true }
       );
@@ -121,6 +121,30 @@ class RealTrader {
       const isLongSqueeze = side === 'SELL';
       const orderSide = isLongSqueeze ? 'buy' : 'sell';
       const closeSide = orderSide === 'buy' ? 'sell' : 'buy';
+
+      // ──────────────────────────────────────────────────────
+      // 0.5. BTC TREND FİLTRESİ (Genel Çöküş Koruması)
+      // ──────────────────────────────────────────────────────
+      try {
+        const btcOhlcv = await this.exchange.fetchOHLCV('BTC/USDT:USDT', '1m', undefined, 6);
+        if (btcOhlcv && btcOhlcv.length >= 2) {
+          const btcPriceBefore = btcOhlcv[0][4]; // 5 dakika önceki kapanış
+          const btcPriceNow = btcOhlcv[btcOhlcv.length - 1][4]; // Şu anki kapanış
+          const btcChange = (btcPriceNow - btcPriceBefore) / btcPriceBefore;
+
+          if (btcChange < -0.01 && orderSide === 'buy') {
+            console.log(`[RealTrader] 🛑 BTC Filtresi: BTC ${(btcChange * 100).toFixed(2)}% düştü, BUY cascade reddedildi. (Genel çöküş)`);
+            return;
+          }
+          if (btcChange > 0.01 && orderSide === 'sell') {
+            console.log(`[RealTrader] 🛑 BTC Filtresi: BTC ${(btcChange * 100).toFixed(2)}% yükseldi, SELL cascade reddedildi. (Genel pump)`);
+            return;
+          }
+          console.log(`[RealTrader] ✅ BTC Filtresi geçildi: BTC değişim ${(btcChange * 100).toFixed(2)}%`);
+        }
+      } catch (e) {
+        console.log(`[RealTrader] ⚠️ BTC Filtresi API hatası, işlem devam ediyor: ${e.message}`);
+      }
 
       const ticker = await this.exchange.fetchTicker(ccxtSymbol);
       const currentPrice = ticker.last;

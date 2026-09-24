@@ -17,7 +17,7 @@ class PaperTrader {
     this.leverage = 10;
     this.feeRate = 0.0008; // %0.08 taker fee
 
-    this.balance = 1500;
+    this.balance = 2000;
     this.winCount = 0;
     this.lossCount = 0;
 
@@ -54,9 +54,9 @@ class PaperTrader {
         console.warn('⚠️ [PaperTrader] MongoDB not connected, falling back to initial stats.');
         return;
       }
-      let state = await BotState.findOne({ type: 'PAPER' }).maxTimeMS(5000);
+      let state = await BotState.findOne({ type: 'PAPER_V2' }).maxTimeMS(5000);
       if (!state) {
-        state = new BotState({ type: 'PAPER', balance: 1500, winCount: 0, lossCount: 0 });
+        state = new BotState({ type: 'PAPER_V2', balance: 2000, winCount: 0, lossCount: 0 });
         await state.save();
       }
       this.balance = state.balance;
@@ -73,7 +73,7 @@ class PaperTrader {
       const mongoose = require('mongoose');
       if (mongoose.connection.readyState !== 1) return;
       await BotState.updateOne(
-        { type: 'PAPER' },
+        { type: 'PAPER_V2' },
         { balance: this.balance, winCount: this.winCount, lossCount: this.lossCount },
         { upsert: true }
       );
@@ -96,8 +96,8 @@ class PaperTrader {
     const msg = `
 👻 *SHADOW BOT (PAPER TRADING) - REALISTIC*
 ========================
-💰 *Balance:* $${this.balance.toFixed(2)} (Start: $1500)
-📊 *Total PnL:* $${(this.balance - 1500).toFixed(2)}
+💰 *Balance:* $${this.balance.toFixed(2)} (Start: $2000)
+📊 *Total PnL:* $${(this.balance - 2000).toFixed(2)}
 ⚖️ *Leverage:* 10x | *Size:* $2000
 
 ✅ Wins: ${this.winCount} | ❌ Losses: ${this.lossCount}
@@ -146,7 +146,36 @@ class PaperTrader {
     }
 
     // ──────────────────────────────────────────────────────
-    // 2. GERÇEKÇİ BAKİYE KONTROLÜ
+    // 2. BTC TREND FİLTRESİ (Genel Çöküş Koruması)
+    // BTC son 5 dakikada %1'den fazla düştüyse ve biz BUY
+    // açacaksak → Bu cascade değil, genel çöküş. GİRME.
+    // BTC son 5 dakikada %1'den fazla yükseldiyse ve biz SELL
+    // açacaksak → Bu cascade değil, genel pump. GİRME.
+    // ──────────────────────────────────────────────────────
+    const tradeType = cascadeData.side === 'SELL' ? 'buy' : 'sell';
+    try {
+      const btcOhlcv = await this.exchange.fetchOHLCV('BTC/USDT:USDT', '1m', undefined, 6);
+      if (btcOhlcv && btcOhlcv.length >= 2) {
+        const btcPriceBefore = btcOhlcv[0][4]; // 5 dakika önceki kapanış
+        const btcPriceNow = btcOhlcv[btcOhlcv.length - 1][4]; // Şu anki kapanış
+        const btcChange = (btcPriceNow - btcPriceBefore) / btcPriceBefore;
+
+        if (btcChange < -0.01 && tradeType === 'buy') {
+          console.log(`[PaperTrader] 🛑 BTC Filtresi: BTC ${(btcChange * 100).toFixed(2)}% düştü, BUY cascade reddedildi. (Genel çöküş)`);
+          return;
+        }
+        if (btcChange > 0.01 && tradeType === 'sell') {
+          console.log(`[PaperTrader] 🛑 BTC Filtresi: BTC ${(btcChange * 100).toFixed(2)}% yükseldi, SELL cascade reddedildi. (Genel pump)`);
+          return;
+        }
+        console.log(`[PaperTrader] ✅ BTC Filtresi geçildi: BTC değişim ${(btcChange * 100).toFixed(2)}%`);
+      }
+    } catch (e) {
+      console.log(`[PaperTrader] ⚠️ BTC Filtresi API hatası, işlem devam ediyor: ${e.message}`);
+    }
+
+    // ──────────────────────────────────────────────────────
+    // 3. GERÇEKÇİ BAKİYE KONTROLÜ
     // ──────────────────────────────────────────────────────
     const marginNeeded = this.tradeAmountUsd / this.leverage;
     const usedMargin = this.activeTrades.size * marginNeeded;
@@ -156,8 +185,6 @@ class PaperTrader {
       console.log(`[PaperTrader] 🛑 YETERSİZ BAKİYE: ${symbol} reddedildi. (Bakiye: $${this.balance.toFixed(2)}, Kullanılan: $${usedMargin.toFixed(2)})`);
       return;
     }
-
-    const tradeType = cascadeData.side === 'SELL' ? 'buy' : 'sell';
 
     // ──────────────────────────────────────────────────────
     // 3. SLIPPAGE SİMÜLASYONU (%0.15 giriş kayması)
