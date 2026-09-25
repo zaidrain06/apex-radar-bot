@@ -40,11 +40,14 @@ class PaperTrader {
 
   // Günlük sayacı gece yarısı sıfırla
   checkDailyReset() {
-    const today = new Date().toDateString();
+    // Gece 12'de sıfırlanması için Türkiye Saati (UTC+3) kullanıyoruz
+    const options = { timeZone: 'Europe/Istanbul', year: 'numeric', month: '2-digit', day: '2-digit' };
+    const today = new Intl.DateTimeFormat('tr-TR', options).format(new Date());
+
     if (today !== this.lastResetDay) {
       this.consecutiveLosses = 0;
       this.lastResetDay = today;
-      console.log('[PaperTrader] 🌅 Yeni gün — Peş peşe zarar sayacı sıfırlandı.');
+      console.log('[PaperTrader] 🌅 Yeni gün (TRT 00:00) — Peş peşe zarar sayacı sıfırlandı.');
       this.saveState();
     }
   }
@@ -57,15 +60,19 @@ class PaperTrader {
         return;
       }
       let state = await BotState.findOne({ type: 'PAPER_V2' }).maxTimeMS(5000);
+
+      const options = { timeZone: 'Europe/Istanbul', year: 'numeric', month: '2-digit', day: '2-digit' };
+      const today = new Intl.DateTimeFormat('tr-TR', options).format(new Date());
+
       if (!state) {
-        state = new BotState({ type: 'PAPER_V2', balance: 2000, winCount: 0, lossCount: 0, consecutiveLosses: 0, lastResetDay: new Date().toDateString() });
+        state = new BotState({ type: 'PAPER_V2', balance: 2000, winCount: 0, lossCount: 0, consecutiveLosses: 0, lastResetDay: today });
         await state.save();
       }
       this.balance = state.balance;
       this.winCount = state.winCount;
       this.lossCount = state.lossCount;
       this.consecutiveLosses = state.consecutiveLosses || 0;
-      this.lastResetDay = state.lastResetDay || new Date().toDateString();
+      this.lastResetDay = state.lastResetDay || today;
       console.log(`🟢 [PaperTrader] Realistic State Loaded. Balance: $${this.balance} | Drawdown: ${this.consecutiveLosses}/${this.maxConsecutiveLosses}`);
     } catch (e) {
       console.error('❌ [PaperTrader] MongoDB Init error:', e.message);
@@ -121,9 +128,14 @@ class PaperTrader {
     // 0. AKILLI ŞALTER KONTROLÜ (Drawdown Limit)
     // ──────────────────────────────────────────────────────
     this.checkDailyReset();
-    if (this.consecutiveLosses >= this.maxConsecutiveLosses) {
+    
+    const isMegaCascade = cascadeData.totalUsd >= 150000;
+
+    if (this.consecutiveLosses >= this.maxConsecutiveLosses && !isMegaCascade) {
       console.log(`[PaperTrader] 🛑 ŞALTER İNDİ! Peş peşe ${this.maxConsecutiveLosses} zarar. Bugünlük işlem durduruldu.`);
       return;
+    } else if (this.consecutiveLosses >= this.maxConsecutiveLosses && isMegaCascade) {
+      console.log(`[PaperTrader] ⚡ ŞALTER DEVRE DIŞI! MEGA CASCADE tespit edildi ($${Math.floor(cascadeData.totalUsd)}), işleme zorla giriliyor.`);
     }
 
     const symbol = cascadeData.symbol;
