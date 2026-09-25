@@ -105,6 +105,10 @@ ${config.whop.productUrl}
       }
 
     } else if (text === '/debug') {
+      if (chatId.toString() !== config.telegram.adminChatId) {
+        await this.sendMessage(chatId, `❌ *Yetkisiz erişim:* Bu komut sadece admin içindir.`);
+        return;
+      }
       const debugText = `
 🛠 *Debug Info:*
 • VIP Channel ID: ${this.channelId}

@@ -14,6 +14,19 @@ console.log('💰 Recurring Revenue Engine (VNT-003)              ');
 console.log('====================================================');
 
 async function bootstrap() {
+  // CRITICAL CONFIG VALIDATION
+  const missingVars = [];
+  if (!config.telegram.botToken) missingVars.push('TELEGRAM_BOT_TOKEN');
+  if (!config.telegram.channelId) missingVars.push('TELEGRAM_CHANNEL_ID');
+  if (!config.telegram.adminChatId) missingVars.push('TELEGRAM_ADMIN_CHAT_ID');
+  if (!process.env.MONGO_URI) missingVars.push('MONGO_URI');
+
+  if (missingVars.length > 0) {
+    console.error(`❌ [FATAL ERROR] Missing required environment variables: ${missingVars.join(', ')}`);
+    console.error('Bot cannot start safely. Exiting...');
+    process.exit(1);
+  }
+
   if (process.env.MONGO_URI) {
     try {
       await mongoose.connect(process.env.MONGO_URI);

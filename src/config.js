@@ -17,13 +17,11 @@ module.exports = {
   telegram: {
     botToken: process.env.TELEGRAM_BOT_TOKEN || '',
     // VIP Channel — paid subscribers only (cascade + all signals)
-    channelId: (process.env.TELEGRAM_CHANNEL_ID && process.env.TELEGRAM_CHANNEL_ID.startsWith('-100'))
-      ? process.env.TELEGRAM_CHANNEL_ID
-      : '-1004208031753',
+    channelId: process.env.TELEGRAM_CHANNEL_ID || '',
     // FREE Channel — public, filtered big liquidations + VIP CTA
     freeChannelId: process.env.TELEGRAM_FREE_CHANNEL_ID || '',
-    adminChatId: process.env.TELEGRAM_ADMIN_CHAT_ID || '1339587201',
-    inviteLink: process.env.TELEGRAM_INVITE_LINK || 'https://t.me/+7olzpqcRqMthNmM0',
+    adminChatId: process.env.TELEGRAM_ADMIN_CHAT_ID || '',
+    inviteLink: process.env.TELEGRAM_INVITE_LINK || '',
     whopUrl: process.env.WHOP_PRODUCT_URL || 'https://whop.com/apexradar/apexradar-vip-intelligence'
   },
 

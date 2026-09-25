@@ -12,12 +12,19 @@ class WhopGate {
    * Verify Whop Webhook Signature
    */
   verifyWebhook(rawBody, signatureHeader) {
-    if (!this.webhookSecret) return true; // development mode bypass
+    if (!this.webhookSecret) {
+      console.error('❌ [WhopGate] WHOP_WEBHOOK_SECRET is missing. Rejecting webhook for safety.');
+      return false;
+    }
     if (!signatureHeader) return false;
 
-    const hmac = crypto.createHmac('sha256', this.webhookSecret);
-    const digest = hmac.update(rawBody).digest('hex');
-    return crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(signatureHeader));
+    try {
+      const hmac = crypto.createHmac('sha256', this.webhookSecret);
+      const digest = hmac.update(rawBody).digest('hex');
+      return crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(signatureHeader));
+    } catch (e) {
+      return false;
+    }
   }
 
   /**

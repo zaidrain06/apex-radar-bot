@@ -1,0 +1,9 @@
+.git
+.env
+node_modules
+shadow_state.json
+test_*.js
+fix_trailing.js
+patch_retry.js
+patch_ac.js
+*.md

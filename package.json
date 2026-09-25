@@ -14,7 +14,6 @@
     "ccxt": "^4.5.82",
     "dotenv": "^17.4.2",
     "mongoose": "^9.10.1",
-    "node-telegram-bot-api": "^2.1.0",
     "ws": "^8.21.3"
   }
 }
