@@ -139,8 +139,24 @@ ${config.whop.productUrl}
       await this.sendMessage(chatId, plansText);
     } else if (text === '/shadow') {
       // ONLY Admin can use this
-      if (chatId.toString() === (process.env.TELEGRAM_ADMIN_CHAT_ID || '').toString()) {
+      if (chatId.toString() === (config.telegram.adminChatId || '').toString()) {
         this.emit('admin_shadow_request', chatId);
+      }
+    } else if (text === '/trade on' || text === '/trade off') {
+      // ONLY Admin can use this
+      if (chatId.toString() !== (config.telegram.adminChatId || '').toString()) {
+        await this.sendMessage(chatId, `❌ *Yetkisiz erişim:* Bu komut sadece admin içindir.`);
+        return;
+      }
+      
+      if (text === '/trade on') {
+        process.env.REAL_TRADING_ENABLED = 'true';
+        await this.sendMessage(chatId, `✅ <b>Gerçek İşlemler (Real Trade) AÇILDI.</b>\nSistem bir sonraki sinyalde MEXC'ye emir gönderecek.`);
+        console.log(`[TelegramManager] 👑 Admin overridden REAL_TRADING_ENABLED = 'true'`);
+      } else {
+        process.env.REAL_TRADING_ENABLED = 'false';
+        await this.sendMessage(chatId, `🔒 <b>Gerçek İşlemler (Real Trade) KAPATILDI.</b>\nSistem artık sadece kağıt üzerinde (Shadow Bot) işlem yapacak.`);
+        console.log(`[TelegramManager] 👑 Admin overridden REAL_TRADING_ENABLED = 'false'`);
       }
     }
   }
