@@ -78,16 +78,16 @@ class TelegramManager extends EventEmitter {
 
     if (text === '/start') {
       const welcome = `
-🚀 *Welcome to ApexRadar VIP Intelligence!*
+🚀 <b>Welcome to ApexRadar VIP Intelligence!</b>
 
 We monitor real-time institutional liquidation cascades, whale order flow, and leverage squeezes across crypto derivatives.
 
-*Available Commands:*
-• /status — Check live WebSocket & radar health
-• /plans — View VIP Membership & Whop pricing
-• \`/auth email@adresin.com\` — Link your Whop VIP account
+<b>Available Commands:</b>
+• /status — Check live WebSocket &amp; radar health
+• /plans — View VIP Membership &amp; Whop pricing
+• <code>/auth email@adresin.com</code> — Link your Whop VIP account
 
-🔒 *VIP Channel Access:*
+🔒 <b>VIP Channel Access:</b>
 Subscribe on Whop to unlock unfiltered real-time alerts:
 ${config.whop.productUrl}
 `.trim();
@@ -127,19 +127,19 @@ ${config.whop.productUrl}
       await this.sendMessage(chatId, statusText);
     } else if (text === '/plans') {
       const plansText = `
-💎 *ApexRadar VIP Membership Plans*
+💎 <b>ApexRadar VIP Membership Plans</b>
 ━━━━━━━━━━━━━━━━━━━━━
-• 1st Month Special: *$9.99* 🔥 (then $14.99/mo)
-• Annual VIP: *$149.99 / Year* 👑 (Save ~20%)
+• 1st Month Special: <b>$9.99</b> 🔥 (then $14.99/mo)
+• Annual VIP: <b>$149.99 / Year</b> 👑 (Save ~20%)
 • Full Access: Instant Telegram VIP Broadcast
 
-👉 *Instant Activation on Whop:*
+👉 <b>Instant Activation on Whop:</b>
 ${config.whop.productUrl}
 `.trim();
       await this.sendMessage(chatId, plansText);
     } else if (text === '/shadow') {
       // ONLY Admin can use this
-      if (chatId.toString() === (process.env.TELEGRAM_ADMIN_CHAT_ID || '1339587201').toString()) {
+      if (chatId.toString() === (process.env.TELEGRAM_ADMIN_CHAT_ID || '').toString()) {
         this.emit('admin_shadow_request', chatId);
       }
     }
@@ -169,11 +169,11 @@ ${config.whop.productUrl}
 
   async sendAlert(formattedMessage) {
     // Alerts MUST ALWAYS go to VIP channel (-100...), never to private personal chat
-    const channelTarget = (this.channelId && this.channelId.startsWith('-100'))
-      ? this.channelId
-      : '-1004208031753';
-
-    return await this.sendMessage(channelTarget, formattedMessage);
+    if (!this.channelId || !this.channelId.startsWith('-100')) {
+      console.error('❌ [TelegramManager] TELEGRAM_CHANNEL_ID is not configured. Dropping VIP alert.');
+      return false;
+    }
+    return await this.sendMessage(this.channelId, formattedMessage);
   }
 
   async sendFreeAlert(formattedMessage) {

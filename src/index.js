@@ -49,6 +49,19 @@ async function bootstrap() {
   await paperTrader.init();
   await realTrader.init();
 
+  // Gerçek işlem durumunu admin'e bildir
+  const realTradingEnabled = process.env.REAL_TRADING_ENABLED === 'true';
+  const realTradingStatus = realTradingEnabled
+    ? '✅ <b>Gerçek İşlem: AÇIK</b> (REAL_TRADING_ENABLED=true)'
+    : '🔒 <b>Gerçek İşlem: KAPALI</b> (REAL_TRADING_ENABLED != true)';
+  console.log(`[ApexRadar] ${realTradingEnabled ? '✅ Gerçek işlem AÇIK.' : '🔒 Gerçek işlem KAPALI.'}`);
+  // Telegram admin bildirimi - bot hazır olunca gönderilir (non-blocking)
+  setTimeout(async () => {
+    try {
+      await telegram.sendMessage(process.env.TELEGRAM_ADMIN_CHAT_ID, realTradingStatus);
+    } catch (e) { /* ignore */ }
+  }, 3000);
+
   // 2. Wire Up Events: Liquidation Signals → VIP ONLY (Standard >25k & Mega >150k)
   binanceEngine.on('liquidation', async (signalData) => {
     const vipMsg = formatLiquidationSignal(signalData);
@@ -108,7 +121,7 @@ async function bootstrap() {
               <div class="badge"><div class="dot"></div> SYSTEMS LIVE 7/24</div>
               <h1>ApexRadar Intelligence</h1>
               <p>Real-time institutional Binance Futures liquidation radar and whale order flow streaming engine.</p>
-              <div class="metric"><span class="metric-label">WebSocket Status</span><span class="metric-val" style="color:#10b981;">CONNECTED</span></div>
+              <div class="metric"><span class="metric-label">WebSocket Status</span><span class="metric-val" style="color:${binanceEngine.isConnected ? '#10b981' : '#ef4444'};">${binanceEngine.isConnected ? 'CONNECTED' : 'DISCONNECTED'}</span></div>
               <div class="metric"><span class="metric-label">Engine Feed</span><span class="metric-val">Binance Futures (!forceOrder)</span></div>
               <div class="metric"><span class="metric-label">Min Alert Filter</span><span class="metric-val">$${config.binance.minLiquidationUsd.toLocaleString()} USD</span></div>
               <div class="metric"><span class="metric-label">Uptime</span><span class="metric-val">${Math.round(process.uptime())}s</span></div>

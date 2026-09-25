@@ -33,3 +33,5 @@ services:
         sync: false
       - key: MEXC_API_SECRET
         sync: false
+      - key: REAL_TRADING_ENABLED
+        value: "false"

@@ -76,7 +76,10 @@ class WhopGate {
   }
 
   /**
-   * Link a Telegram user to their Whop account by email
+   * Link a Telegram user to their Whop account by email.
+   * Guards against account hijacking: if the email is already linked to a
+   * DIFFERENT Telegram ID, the request is rejected. The legitimate owner
+   * must contact support to re-link (or the admin resets telegramId in DB).
    */
   async linkTelegramByEmail(email, telegramId) {
     const member = await WhopMember.findOne({
@@ -85,6 +88,17 @@ class WhopGate {
     });
 
     if (!member) return null;
+
+    // Already linked to this exact Telegram ID — idempotent, allow through
+    if (member.telegramId && member.telegramId === telegramId.toString()) {
+      return member;
+    }
+
+    // Already linked to a DIFFERENT Telegram ID — reject to prevent hijacking
+    if (member.telegramId && member.telegramId !== telegramId.toString()) {
+      console.warn(`[WhopGate] ⚠️ /auth hijack attempt: email=${email} already linked to TG ${member.telegramId}, rejected TG ${telegramId}`);
+      return null;
+    }
 
     member.telegramId = telegramId.toString();
     await member.save();

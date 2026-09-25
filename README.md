@@ -3,15 +3,17 @@
 
 ApexRadar is a high-frequency cryptocurrency derivatives intelligence engine that monitors real-time institutional liquidation cascades, whale order flow, and leverage squeezes across Binance Futures.
 
-Designed for automated monetization through **Whop.com** ($29/month subscriptions) with zero PayPal dependency and direct Turkish bank IBAN or USDT payouts.
+Designed for automated monetization through **Whop.com** with zero PayPal dependency and direct Turkish bank IBAN or USDT payouts.
 
 ---
 
 ## 🎯 Revenue Economics ($1 = ~48 TRY)
 
-- **Subscription Price:** $29 / month
+- **1st Month Price:** $9.99 🔥
+- **Monthly Price (after 1st month):** $14.99 / month
+- **Annual VIP:** $149.99 / year (~20% savings)
 - **Target Net Monthly:** **$2,000 / month**
-- **Subscribers Needed:** **Only 70 Active Subscribers**
+- **Subscribers Needed:** **~134 Active Subscribers** (at $14.99/mo)
 - **Monthly TRY Cash Flow:** **~96,000 TL / month**
 - **Operating Margin:** > 97% (free public WebSockets, low-cost Render/Railway cloud hosting)
 
@@ -81,10 +83,17 @@ curl http://localhost:3000/health
 | `PORT` | Webhook & healthcheck port | `3000` |
 | `MIN_LIQUIDATION_USD` | Minimum USD to broadcast alert | `25000` |
 | `MEGA_LIQUIDATION_USD` | Trigger for Mega Whale alert | `150000` |
+| `MONGO_URI` | MongoDB Atlas connection string | — |
 | `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather | — |
 | `TELEGRAM_CHANNEL_ID` | VIP Telegram channel or group | — |
+| `TELEGRAM_FREE_CHANNEL_ID` | Free public Telegram channel | — |
+| `TELEGRAM_ADMIN_CHAT_ID` | Your personal Telegram chat ID | — |
+| `TELEGRAM_INVITE_LINK` | VIP channel invite link | — |
 | `WHOP_API_KEY` | Whop developer API key | — |
 | `WHOP_WEBHOOK_SECRET` | Whop webhook signature secret | — |
+| `MEXC_API_KEY` | MEXC Futures API key (real trading) | — |
+| `MEXC_API_SECRET` | MEXC Futures API secret (real trading) | — |
+| `REAL_TRADING_ENABLED` | Set to `"true"` to enable live MEXC orders | `false` |
 
 ---
 

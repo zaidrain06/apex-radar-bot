@@ -201,6 +201,14 @@ class RealTrader {
     if (!this.exchange) return;
 
     // ──────────────────────────────────────────────────────
+    // REAL_TRADING_ENABLED KILIDI
+    // ──────────────────────────────────────────────────────
+    if (process.env.REAL_TRADING_ENABLED !== 'true') {
+      console.log('[RealTrader] 🔒 Gerçek işlem kapalı (REAL_TRADING_ENABLED != true). Emir gönderilmedi.');
+      return;
+    }
+
+    // ──────────────────────────────────────────────────────
     // 0. AKILLI ŞALTER KONTROLÜ (Drawdown Limit)
     // ──────────────────────────────────────────────────────
     this.checkDailyReset();
@@ -388,7 +396,15 @@ ${coinTag} <b>${ccxtSymbol}</b>
 
       await this.telegram.sendMessage(this.adminChatId, msg);
 
-      const monitorInterval = setInterval(async () => {
+      // ──────────────────────────────────────────────────────
+      // 5 DAKİKA TIMEOUT + SL/TP MONITOR
+      // timeoutId önceden tanımlanır ki monitorInterval callback'i
+      // closure ile güvenle erişebilsin (TDZ riski ortadan kalkar).
+      // ──────────────────────────────────────────────────────
+      let timeoutId;
+      let monitorInterval;
+
+      monitorInterval = setInterval(async () => {
         if (!this.activeTrades.has(tradeId)) {
           clearInterval(monitorInterval);
           return;
@@ -427,14 +443,11 @@ ${coinTag} <b>${ccxtSymbol}</b>
         }
       }, 5000);
 
-      // Klima referansını kaydet
+      // Referansı kaydet
       const tradeRef = this.activeTrades.get(tradeId);
       if (tradeRef) tradeRef.monitorInterval = monitorInterval;
 
-      // ──────────────────────────────────────────────────────
-      // 5 DAKİKA TIMEOUT (Momentum bitti)
-      // ──────────────────────────────────────────────────────
-      const timeoutId = setTimeout(() => {
+      timeoutId = setTimeout(() => {
         const t = this.activeTrades.get(tradeId);
         if (!t) return;
         if (t.monitorInterval) clearInterval(t.monitorInterval);
