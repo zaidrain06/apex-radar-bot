@@ -364,16 +364,37 @@ ${pnlEmoji}: *$${netPnl.toFixed(2)}*
         if (!currentPx) return;
 
         let hitLimit = false;
+        let exactExitPrice = currentPx;
+        let reasonStr = 'TIMEOUT/OTHER';
+
         if (tradeType === 'buy') {
-          if (currentPx >= tpPrice || currentPx <= slPrice) hitLimit = true;
-        } else {
-          if (currentPx <= tpPrice || currentPx >= slPrice) hitLimit = true;
+          if (currentPx >= tpPrice) {
+            hitLimit = true;
+            exactExitPrice = tpPrice;
+            reasonStr = 'TP HIT';
+          } else if (currentPx <= slPrice) {
+            hitLimit = true;
+            exactExitPrice = slPrice;
+            reasonStr = 'SL HIT';
+          }
+        } else { // sell
+          if (currentPx <= tpPrice) {
+            hitLimit = true;
+            exactExitPrice = tpPrice;
+            reasonStr = 'TP HIT';
+          } else if (currentPx >= slPrice) {
+            hitLimit = true;
+            exactExitPrice = slPrice;
+            reasonStr = 'SL HIT';
+          }
         }
 
         if (hitLimit) {
           clearInterval(monitorInterval);
           clearTimeout(timeoutId);
-          await closeTrade('SL/TP HIT', currentPx);
+          // SIMULASYON MÜKEMMELLİĞİ: Gecikmeli güncel fiyat (currentPx) yerine 
+          // tam sınır fiyatı (exactExitPrice) kullanarak -90$ gibi slippage hatalarını önle.
+          await closeTrade(reasonStr, exactExitPrice);
         }
       } catch (e) {}
     }, 5000);
